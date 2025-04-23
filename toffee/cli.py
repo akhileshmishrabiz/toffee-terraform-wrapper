@@ -2,13 +2,10 @@
 Main CLI entrypoint for the Toffee CLI tool
 """
 
-import os
-import sys
 import typer
-from typing import List, Optional
+from typing import List
 from rich.console import Console
 
-from .commands.base import BaseCommand
 from .commands.terraform import TerraformCommands
 from .commands.info import InfoCommands
 from .commands.config import ConfigCommands
@@ -47,13 +44,16 @@ def get_config_commands() -> ConfigCommands:
 @app.callback()
 def main(
     ctx: typer.Context,
-    version: bool = typer.Option(False, "--version", "-v", help="Show version and exit"),
+    version: bool = typer.Option(
+        False, "--version", "-v", help="Show version and exit"
+    ),
 ):
     """
     Toffee - A modern CLI tool for deploying Terraform across multiple environments
     """
     if version:
         from . import __version__
+
         console.print(f"[bold cyan]Toffee[/] version [bold green]{__version__}[/]")
         raise typer.Exit()
 
@@ -61,14 +61,16 @@ def main(
 @app.command()
 def init(
     env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(None, help="Additional arguments to pass to Terraform"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
 ):
     """Initialize Terraform in the specified environment"""
     if not env:
         error_console.print("[bold red]Error:[/] Environment name is required")
         error_console.print("[yellow]Usage:[/] toffee init [ENVIRONMENT]")
         raise typer.Exit(code=1)
-        
+
     cmd = get_terraform_commands()
     exit_code = cmd.init(env, args)
     raise typer.Exit(code=exit_code)
@@ -77,14 +79,16 @@ def init(
 @app.command()
 def plan(
     env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(None, help="Additional arguments to pass to Terraform"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
 ):
     """Create a Terraform execution plan for the specified environment"""
     if not env:
         error_console.print("[bold red]Error:[/] Environment name is required")
         error_console.print("[yellow]Usage:[/] toffee plan [ENVIRONMENT]")
         raise typer.Exit(code=1)
-        
+
     cmd = get_terraform_commands()
     exit_code = cmd.plan(env, args)
     raise typer.Exit(code=exit_code)
@@ -93,14 +97,16 @@ def plan(
 @app.command()
 def apply(
     env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(None, help="Additional arguments to pass to Terraform"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
 ):
     """Apply Terraform changes for the specified environment"""
     if not env:
         error_console.print("[bold red]Error:[/] Environment name is required")
         error_console.print("[yellow]Usage:[/] toffee apply [ENVIRONMENT]")
         raise typer.Exit(code=1)
-        
+
     cmd = get_terraform_commands()
     exit_code = cmd.apply(env, args)
     raise typer.Exit(code=exit_code)
@@ -109,14 +115,16 @@ def apply(
 @app.command()
 def destroy(
     env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(None, help="Additional arguments to pass to Terraform"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
 ):
     """Destroy Terraform resources for the specified environment"""
     if not env:
         error_console.print("[bold red]Error:[/] Environment name is required")
         error_console.print("[yellow]Usage:[/] toffee destroy [ENVIRONMENT]")
         raise typer.Exit(code=1)
-        
+
     cmd = get_terraform_commands()
     exit_code = cmd.destroy(env, args)
     raise typer.Exit(code=exit_code)
@@ -125,14 +133,16 @@ def destroy(
 @app.command()
 def output(
     env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(None, help="Additional arguments to pass to Terraform"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
 ):
     """Show Terraform outputs for the specified environment"""
     if not env:
         error_console.print("[bold red]Error:[/] Environment name is required")
         error_console.print("[yellow]Usage:[/] toffee output [ENVIRONMENT]")
         raise typer.Exit(code=1)
-        
+
     cmd = get_terraform_commands()
     exit_code = cmd.output(env, args)
     raise typer.Exit(code=exit_code)
@@ -142,7 +152,9 @@ def output(
 def run(
     env: str = typer.Argument(..., help="Environment name"),
     command: str = typer.Argument(..., help="Terraform command to run"),
-    args: List[str] = typer.Argument(None, help="Additional arguments to pass to Terraform"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
 ):
     """Run a custom Terraform command for the specified environment"""
     cmd = get_terraform_commands()
