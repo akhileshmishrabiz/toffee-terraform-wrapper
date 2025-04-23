@@ -2,7 +2,6 @@
 Tests for the main CLI interface
 """
 
-import os
 import pytest
 from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner

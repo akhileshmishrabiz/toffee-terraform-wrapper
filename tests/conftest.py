@@ -6,7 +6,6 @@ import os
 import shutil
 import tempfile
 import pytest
-from pathlib import Path
 
 @pytest.fixture
 def temp_terraform_project():

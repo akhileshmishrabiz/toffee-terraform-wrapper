@@ -3,8 +3,7 @@ Tests for the command modules of Toffee
 """
 
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Import command modules
 from commands.base import BaseCommand
@@ -31,7 +30,7 @@ def test_validate_environment_valid(temp_terraform_project, monkeypatch):
     monkeypatch.chdir(temp_terraform_project["temp_dir"])
     
     cmd = BaseCommand()
-    assert cmd.validate_environment("dev") == True
+    assert cmd.validate_environment("dev") is True
 
 
 def test_validate_environment_invalid(temp_terraform_project, monkeypatch):
@@ -41,7 +40,7 @@ def test_validate_environment_invalid(temp_terraform_project, monkeypatch):
     
     with patch('commands.base.error_console') as mock_console:
         cmd = BaseCommand()
-        assert cmd.validate_environment("nonexistent") == False
+        assert cmd.validate_environment("nonexistent") is False
         
         # Check that an error message was displayed
         mock_console.print.assert_called()

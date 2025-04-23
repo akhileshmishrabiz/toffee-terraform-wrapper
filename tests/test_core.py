@@ -4,7 +4,6 @@ Tests for the core modules of Toffee
 
 import os
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 # Import core modules
@@ -29,13 +28,13 @@ def test_environment_is_valid(temp_terraform_project):
     env = Environment(name="dev", 
                       vars_file=os.path.join(temp_terraform_project["vars_dir"], "dev.tfvars"),
                       backend_file=os.path.join(temp_terraform_project["vars_dir"], "dev.tfbackend"))
-    assert env.is_valid == True
+    assert env.is_valid is True
     
     # Invalid environment (non-existent files)
     env = Environment(name="stage", 
                       vars_file=os.path.join(temp_terraform_project["vars_dir"], "stage.tfvars"),
                       backend_file=os.path.join(temp_terraform_project["vars_dir"], "stage.tfbackend"))
-    assert env.is_valid == False
+    assert env.is_valid is False
 
 
 def test_environment_manager_discovery(temp_terraform_project):
@@ -52,7 +51,7 @@ def test_environment_manager_discovery(temp_terraform_project):
     dev_env = manager.get_environment("dev")
     assert dev_env is not None
     assert dev_env.name == "dev"
-    assert dev_env.is_valid == True
+    assert dev_env.is_valid is True
 
 
 def test_environment_validation(temp_terraform_project):
@@ -61,12 +60,12 @@ def test_environment_validation(temp_terraform_project):
     
     # Valid environment
     valid, error = manager.validate_environment("dev")
-    assert valid == True
+    assert valid is True
     assert error is None
     
     # Invalid environment
     valid, error = manager.validate_environment("stage")
-    assert valid == False
+    assert valid is False
     assert "not found" in error
     assert "Available environments: " in error
 
@@ -92,8 +91,8 @@ def test_terraform_command_creation():
                            needs_vars_file=False, needs_backend_config=True)
     assert cmd.name == "init"
     assert cmd.description == "Initialize terraform"
-    assert cmd.needs_vars_file == False
-    assert cmd.needs_backend_config == True
+    assert cmd.needs_vars_file is False
+    assert cmd.needs_backend_config is True
     assert cmd.default_args == []  # Should initialize empty list
 
 
@@ -201,4 +200,4 @@ def test_project_config(temp_terraform_project, temp_config_dir):
     
     # Project config should override global config
     assert project_config["terraform_path"] == "/project/terraform"
-    assert project_config["auto_approve"] == True
+    assert project_config["auto_approve"] is True
