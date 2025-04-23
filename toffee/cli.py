@@ -9,6 +9,7 @@ from rich.console import Console
 from .commands.terraform import TerraformCommands
 from .commands.info import InfoCommands
 from .commands.config import ConfigCommands
+from .commands.env import EnvCommands  # Import EnvCommands
 
 app = typer.Typer(
     name="toffee",
@@ -18,9 +19,11 @@ app = typer.Typer(
 
 info_app = typer.Typer(help="Information commands")
 config_app = typer.Typer(help="Configuration commands")
+env_app = typer.Typer(help="Environment management commands")  # Create env subcommand
 
 app.add_typer(info_app, name="info")
 app.add_typer(config_app, name="config")
+app.add_typer(env_app, name="env")  # Add env subcommand to main app
 
 console = Console()
 error_console = Console(stderr=True)
@@ -39,6 +42,11 @@ def get_info_commands() -> InfoCommands:
 def get_config_commands() -> ConfigCommands:
     """Get the configuration commands handler"""
     return ConfigCommands()
+
+
+def get_env_commands() -> EnvCommands:
+    """Get the environment commands handler"""
+    return EnvCommands()
 
 
 @app.callback()
@@ -145,6 +153,24 @@ def output(
 
     cmd = get_terraform_commands()
     exit_code = cmd.output(env, args)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def refresh(
+    env: str = typer.Argument(None, help="Environment name"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
+):
+    """Refresh Terraform state for the specified environment"""
+    if not env:
+        error_console.print("Error: Environment name is required")
+        error_console.print("Usage: toffee refresh [ENVIRONMENT]")
+        raise typer.Exit(code=1)
+
+    cmd = get_terraform_commands()
+    exit_code = cmd.refresh(env, args)
     raise typer.Exit(code=exit_code)
 
 
@@ -256,6 +282,28 @@ def init_project_config():
     """Initialize a project configuration file"""
     cmd = get_config_commands()
     exit_code = cmd.init_project_config()
+    raise typer.Exit(code=exit_code)
+
+
+# Add environment commands
+@env_app.command("create")
+def create_environment(
+    name: str = typer.Argument(..., help="Name of the environment to create"),
+):
+    """Create a new environment with template files"""
+    cmd = get_env_commands()
+    exit_code = cmd.create_environment(name)
+    raise typer.Exit(code=exit_code)
+
+
+@env_app.command("copy")
+def copy_environment(
+    source: str = typer.Argument(..., help="Source environment name"),
+    target: str = typer.Argument(..., help="Target environment name"),
+):
+    """Copy an existing environment to a new one"""
+    cmd = get_env_commands()
+    exit_code = cmd.copy_environment(source, target)
     raise typer.Exit(code=exit_code)
 
 
