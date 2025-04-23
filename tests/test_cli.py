@@ -5,7 +5,7 @@ Tests for the main CLI interface
 import pytest
 from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner
-from cli import app
+from toffee.cli import app
 
 
 @pytest.fixture
@@ -16,13 +16,13 @@ def runner():
 
 def test_version(runner):
     """Test displaying the version"""
-    with patch('cli.__version__', 'test-version'):
+    with patch('toffee.cli.__version__', 'test-version'):
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
         assert "Toffee version test-version" in result.output
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_init_command(mock_get_commands, runner):
     """Test the init command"""
     # Mock the terraform commands
@@ -38,7 +38,7 @@ def test_init_command(mock_get_commands, runner):
     mock_cmd.init.assert_called_once_with("dev", None)
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_init_command_missing_env(mock_get_commands, runner):
     """Test init command with missing environment"""
     # Mock the terraform commands
@@ -54,7 +54,7 @@ def test_init_command_missing_env(mock_get_commands, runner):
     mock_cmd.init.assert_not_called()
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_plan_command(mock_get_commands, runner):
     """Test the plan command"""
     # Mock the terraform commands
@@ -70,7 +70,7 @@ def test_plan_command(mock_get_commands, runner):
     mock_cmd.plan.assert_called_once_with("dev", None)
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_apply_command(mock_get_commands, runner):
     """Test the apply command"""
     # Mock the terraform commands
@@ -86,7 +86,7 @@ def test_apply_command(mock_get_commands, runner):
     mock_cmd.apply.assert_called_once_with("dev", None)
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_apply_command_with_args(mock_get_commands, runner):
     """Test the apply command with extra arguments"""
     # Mock the terraform commands
@@ -102,7 +102,7 @@ def test_apply_command_with_args(mock_get_commands, runner):
     mock_cmd.apply.assert_called_once_with("dev", ["-auto-approve"])
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_destroy_command(mock_get_commands, runner):
     """Test the destroy command"""
     # Mock the terraform commands
@@ -118,7 +118,7 @@ def test_destroy_command(mock_get_commands, runner):
     mock_cmd.destroy.assert_called_once_with("dev", None)
 
 
-@patch('cli.get_terraform_commands')
+@patch('toffee.cli.get_terraform_commands')
 def test_run_command(mock_get_commands, runner):
     """Test the run command for custom terraform commands"""
     # Mock the terraform commands
@@ -134,7 +134,7 @@ def test_run_command(mock_get_commands, runner):
     mock_cmd.run_command.assert_called_once_with("dev", "state", ["list"])
 
 
-@patch('cli.get_info_commands')
+@patch('toffee.cli.get_info_commands')
 def test_list_environments_command(mock_get_commands, runner):
     """Test the list environments command"""
     # Mock the info commands
@@ -150,7 +150,7 @@ def test_list_environments_command(mock_get_commands, runner):
     mock_cmd.list_environments.assert_called_once()
 
 
-@patch('cli.get_info_commands')
+@patch('toffee.cli.get_info_commands')
 def test_show_env_info_command(mock_get_commands, runner):
     """Test the show environment info command"""
     # Mock the info commands
@@ -166,7 +166,7 @@ def test_show_env_info_command(mock_get_commands, runner):
     mock_cmd.show_env_info.assert_called_once_with("dev")
 
 
-@patch('cli.get_config_commands')
+@patch('toffee.cli.get_config_commands')
 def test_show_config_command(mock_get_commands, runner):
     """Test the show config command"""
     # Mock the config commands
@@ -182,7 +182,7 @@ def test_show_config_command(mock_get_commands, runner):
     mock_cmd.show_config.assert_called_once()
 
 
-@patch('cli.get_config_commands')
+@patch('toffee.cli.get_config_commands')
 def test_set_config_command(mock_get_commands, runner):
     """Test the set config command"""
     # Mock the config commands
@@ -198,7 +198,7 @@ def test_set_config_command(mock_get_commands, runner):
     mock_cmd.set_config.assert_called_once_with("terraform_path", "/custom/terraform")
 
 
-@patch('cli.get_config_commands')
+@patch('toffee.cli.get_config_commands')
 def test_init_project_config_command(mock_get_commands, runner):
     """Test the init project config command"""
     # Mock the config commands

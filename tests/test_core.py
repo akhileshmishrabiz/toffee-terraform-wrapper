@@ -7,9 +7,9 @@ import json
 from unittest.mock import patch, MagicMock
 
 # Import core modules
-from core.environment import Environment, EnvironmentManager
-from core.terraform import TerraformCommand, TerraformRunner
-from core.config import Config, DEFAULT_CONFIG
+from toffee.core.environment import Environment, EnvironmentManager
+from toffee.core.terraform import TerraformCommand, TerraformRunner
+from toffee.core.config import Config, DEFAULT_CONFIG
 
 
 # -------- Environment Tests --------

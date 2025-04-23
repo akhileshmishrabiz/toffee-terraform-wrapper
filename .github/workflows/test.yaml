@@ -34,4 +34,5 @@ jobs:
     
     - name: Test with pytest
       run: |
-        pytest
+        cd ${{ github.workspace }}
+        python -m pytest

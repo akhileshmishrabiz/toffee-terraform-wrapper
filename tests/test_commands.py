@@ -6,10 +6,10 @@ import os
 from unittest.mock import patch
 
 # Import command modules
-from commands.base import BaseCommand
-from commands.terraform import TerraformCommands
-from commands.info import InfoCommands
-from commands.config import ConfigCommands
+from toffee.commands.base import BaseCommand
+from toffee.commands.terraform import TerraformCommands
+from toffee.commands.info import InfoCommands
+from toffee.commands.config import ConfigCommands
 
 
 # -------- Base Command Tests --------
@@ -38,7 +38,7 @@ def test_validate_environment_invalid(temp_terraform_project, monkeypatch):
     # Change to the temp project directory
     monkeypatch.chdir(temp_terraform_project["temp_dir"])
     
-    with patch('commands.base.error_console') as mock_console:
+    with patch('toffee.commands.base.error_console') as mock_console:
         cmd = BaseCommand()
         assert cmd.validate_environment("nonexistent") is False
         
@@ -49,7 +49,7 @@ def test_validate_environment_invalid(temp_terraform_project, monkeypatch):
         assert "not found" in args[0]
 
 
-@patch('core.terraform.TerraformRunner.run_command')
+@patch('toffee.core.terraform.TerraformRunner.run_command')
 def test_execute_terraform_command(mock_run_command, temp_terraform_project, monkeypatch):
     """Test executing a Terraform command"""
     # Mock the run_command method to return success
@@ -68,12 +68,12 @@ def test_execute_terraform_command(mock_run_command, temp_terraform_project, mon
     assert args[1].name == "dev"
     
     # Check return value
-    assert exit_code ==.0
+    assert exit_code == 0
 
 
 # -------- Terraform Commands Tests --------
 
-@patch('commands.terraform.BaseCommand.execute_terraform_command')
+@patch('toffee.commands.terraform.BaseCommand.execute_terraform_command')
 def test_terraform_init_command(mock_execute, temp_terraform_project, monkeypatch):
     """Test the init command"""
     # Mock the execute_terraform_command method to return success
@@ -92,7 +92,7 @@ def test_terraform_init_command(mock_execute, temp_terraform_project, monkeypatc
     assert exit_code == 0
 
 
-@patch('commands.terraform.BaseCommand.execute_terraform_command')
+@patch('toffee.commands.terraform.BaseCommand.execute_terraform_command')
 def test_terraform_plan_command(mock_execute, temp_terraform_project, monkeypatch):
     """Test the plan command"""
     # Mock the execute_terraform_command method to return success
@@ -111,7 +111,7 @@ def test_terraform_plan_command(mock_execute, temp_terraform_project, monkeypatc
     assert exit_code == 0
 
 
-@patch('commands.terraform.BaseCommand.execute_terraform_command')
+@patch('toffee.commands.terraform.BaseCommand.execute_terraform_command')
 def test_terraform_apply_command(mock_execute, temp_terraform_project, monkeypatch):
     """Test the apply command"""
     # Mock the execute_terraform_command method to return success
@@ -130,7 +130,7 @@ def test_terraform_apply_command(mock_execute, temp_terraform_project, monkeypat
     assert exit_code == 0
 
 
-@patch('commands.terraform.BaseCommand.execute_terraform_command')
+@patch('toffee.commands.terraform.BaseCommand.execute_terraform_command')
 def test_terraform_apply_with_auto_approve(mock_execute, temp_terraform_project, monkeypatch):
     """Test the apply command with auto-approve from config"""
     # Mock the execute_terraform_command method to return success
@@ -138,11 +138,6 @@ def test_terraform_apply_with_auto_approve(mock_execute, temp_terraform_project,
     
     # Change to the temp project directory
     monkeypatch.chdir(temp_terraform_project["temp_dir"])
-    
-    # Create a project config file with auto_approve=True
-    os.makedirs(os.path.join(temp_terraform_project["temp_dir"], ".toffee"), exist_ok=True)
-    with open(os.path.join(temp_terraform_project["temp_dir"], ".toffee.json"), "w") as f:
-        f.write('{"auto_approve": true}')
     
     # Create command with mocked project_config
     cmd = TerraformCommands()
@@ -163,7 +158,7 @@ def test_terraform_apply_with_auto_approve(mock_execute, temp_terraform_project,
 
 # -------- Info Commands Tests --------
 
-@patch('commands.base.BaseCommand.display_environments')
+@patch('toffee.commands.base.BaseCommand.display_environments')
 def test_info_list_environments(mock_display, temp_terraform_project, monkeypatch):
     """Test the list_environments command"""
     # Change to the temp project directory
@@ -179,14 +174,14 @@ def test_info_list_environments(mock_display, temp_terraform_project, monkeypatc
     assert exit_code == 0
 
 
-@patch('commands.base.BaseCommand.validate_environment')
+@patch('toffee.commands.base.BaseCommand.validate_environment')
 def test_info_show_env_info(mock_validate, temp_terraform_project, monkeypatch):
     """Test the show_env_info command"""
     # Mock the validate_environment method to return success
     mock_validate.return_value = True
     
     # Create a mock environment
-    from core.environment import Environment
+    from toffee.core.environment import Environment
     mock_env = Environment(
         name="dev",
         vars_file=os.path.join(temp_terraform_project["vars_dir"], "dev.tfvars"),
@@ -196,8 +191,8 @@ def test_info_show_env_info(mock_validate, temp_terraform_project, monkeypatch):
     # Change to the temp project directory
     monkeypatch.chdir(temp_terraform_project["temp_dir"])
     
-    with patch('commands.info.InfoCommands.env_manager.get_environment', return_value=mock_env):
-        with patch('commands.info.console'):
+    with patch('toffee.commands.info.InfoCommands.env_manager.get_environment', return_value=mock_env):
+        with patch('toffee.commands.info.console'):
             cmd = InfoCommands()
             exit_code = cmd.show_env_info("dev")
             
@@ -210,7 +205,7 @@ def test_info_show_env_info(mock_validate, temp_terraform_project, monkeypatch):
 
 # -------- Config Commands Tests --------
 
-@patch('commands.config.console')
+@patch('toffee.commands.config.console')
 def test_config_show_config(mock_console, temp_config_dir):
     """Test the show_config command"""
     cmd = ConfigCommands()
@@ -223,7 +218,7 @@ def test_config_show_config(mock_console, temp_config_dir):
     assert exit_code == 0
 
 
-@patch('core.config.Config.set')
+@patch('toffee.core.config.Config.set')
 def test_config_set_config(mock_set, temp_config_dir):
     """Test the set_config command"""
     cmd = ConfigCommands()
@@ -238,7 +233,7 @@ def test_config_set_config(mock_set, temp_config_dir):
 
 def test_config_set_config_invalid_key(temp_config_dir):
     """Test the set_config command with an invalid key"""
-    with patch('commands.config.console') as mock_console:
+    with patch('toffee.commands.config.console') as mock_console:
         cmd = ConfigCommands()
         exit_code = cmd.set_config("invalid_key", "value")
         
