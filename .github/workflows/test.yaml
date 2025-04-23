@@ -6,8 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-  workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -28,20 +26,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e .
         pip install -r requirements-dev.txt
-        pip install ruff pytest pytest-cov
+        pip install ruff pytest
     
     - name: Lint with ruff
-      uses: chartboost/ruff-action@v1
-      with:
-        src: "."
-        args: --fix
+      run: |
+        ruff check .
     
     - name: Test with pytest
       run: |
-        pytest --cov=toffee --cov-report=xml
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+        pytest
