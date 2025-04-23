@@ -5,8 +5,7 @@ Terraform command execution for the Toffee CLI tool
 import subprocess
 import logging
 import os
-import re
-from typing import List, Optional, Dict, Tuple, Any
+from typing import List, Optional, Dict, Tuple
 from dataclasses import dataclass
 
 from .environment import Environment
@@ -109,16 +108,6 @@ class TerraformRunner:
         ),
     }
 
-    # Common error patterns to handle specially
-    ERROR_PATTERNS = {
-        "no_s3_bucket": r"S3 bucket \"(.*?)\" does not exist",
-        "no_workspace": r"workspace \"(.*?)\" does not exist",
-        "no_terraform_files": r"No Terraform configuration files",
-        "locked_state": r"Error: (.*?) is locked",
-        "invalid_json": r"Error: Invalid JSON",
-        "invalid_module_path": r"Error: Module not found",
-    }
-
     def __init__(self, terraform_path: str = "terraform"):
         self.terraform_path = terraform_path
 
@@ -131,14 +120,14 @@ class TerraformRunner:
         return list(self.COMMANDS.keys())
 
     def build_command(
-        self, command_name: str, env: Environment, extra_args: List[str] = None
+        self, command_name: str, env: Optional[Environment] = None, extra_args: List[str] = None
     ) -> List[str]:
         """
         Build a Terraform command with the appropriate options for the environment
 
         Args:
             command_name: The name of the Terraform command to run
-            env: The environment to run the command in
+            env: The environment to run the command in (optional)
             extra_args: Additional arguments to pass to the command
 
         Returns:
@@ -149,24 +138,26 @@ class TerraformRunner:
 
         cmd = [self.terraform_path, command_name]
 
-        # Get command configuration
-        command = self.get_command(command_name)
-        if command:
-            # Add backend config if needed
-            if command.needs_backend_config and os.path.exists(env.backend_file):
-                cmd.append(f"-backend-config={env.backend_file}")
+        # Only add environment-specific args if an environment is provided
+        if env:
+            # Get command configuration
+            command = self.get_command(command_name)
+            if command:
+                # Add backend config if needed
+                if command.needs_backend_config and os.path.exists(env.backend_file):
+                    cmd.append(f"-backend-config={env.backend_file}")
 
-            # Add var file if needed
-            if command.needs_vars_file and os.path.exists(env.vars_file):
-                cmd.append(f"-var-file={env.vars_file}")
+                # Add var file if needed
+                if command.needs_vars_file and os.path.exists(env.vars_file):
+                    cmd.append(f"-var-file={env.vars_file}")
 
-            # Add default args for this command
-            if command.default_args:
-                cmd.extend(command.default_args)
-        else:
-            # For custom/unknown commands, add the var file only if it exists
-            if os.path.exists(env.vars_file):
-                cmd.append(f"-var-file={env.vars_file}")
+                # Add default args for this command
+                if command.default_args:
+                    cmd.extend(command.default_args)
+            else:
+                # For custom/unknown commands, add the var file only if it exists
+                if os.path.exists(env.vars_file):
+                    cmd.append(f"-var-file={env.vars_file}")
 
         # Add any extra args
         if extra_args:
@@ -175,14 +166,14 @@ class TerraformRunner:
         return cmd
 
     def run_command(
-        self, command_name: str, env: Environment, extra_args: List[str] = None
+        self, command_name: str, env: Optional[Environment] = None, extra_args: List[str] = None
     ) -> Tuple[int, str, str]:
         """
         Run a Terraform command
 
         Args:
             command_name: The name of the Terraform command to run
-            env: The environment to run the command in
+            env: The environment to run the command in (optional)
             extra_args: Additional arguments to pass to the command
 
         Returns:
@@ -200,58 +191,7 @@ class TerraformRunner:
                 check=False,  # Don't raise an exception on non-zero exit
             )
             
-            # Analyze the output for known error patterns
-            if result.returncode != 0:
-                enhanced_stderr = self._enhance_error_output(result.stderr, env)
-                return result.returncode, result.stdout, enhanced_stderr
-            
             return result.returncode, result.stdout, result.stderr
         except Exception as e:
             logger.error(f"Error running command: {e}")
             return 1, "", str(e)
-    
-    def _enhance_error_output(self, stderr: str, env: Environment) -> str:
-        """
-        Enhance error output with more helpful information
-        
-        Args:
-            stderr: The original stderr output
-            env: The environment
-            
-        Returns:
-            Enhanced error message
-        """
-        # Check for known error patterns
-        for error_name, pattern in self.ERROR_PATTERNS.items():
-            match = re.search(pattern, stderr)
-            if match:
-                if error_name == "no_s3_bucket" and match.group(1):
-                    bucket_name = match.group(1)
-                    stderr += f"\n\nToffee Tip: The S3 bucket '{bucket_name}' doesn't exist. You may need to:\n"
-                    stderr += f"1. Create the bucket: aws s3 mb s3://{bucket_name}\n"
-                    stderr += f"2. Enable versioning: aws s3api put-bucket-versioning --bucket {bucket_name} --versioning-configuration Status=Enabled\n"
-                
-                elif error_name == "no_workspace" and match.group(1):
-                    workspace = match.group(1)
-                    stderr += f"\n\nToffee Tip: The workspace '{workspace}' doesn't exist. You may need to create it:\n"
-                    stderr += f"toffee run {env.name} workspace new {workspace}\n"
-                
-                elif error_name == "no_terraform_files":
-                    stderr += "\n\nToffee Tip: No Terraform configuration files found. Make sure you're in the right directory."
-                
-                elif error_name == "locked_state" and match.group(1):
-                    state_file = match.group(1)
-                    stderr += "\n\nToffee Tip: The state file is locked. This usually happens when:\n"
-                    stderr += "1. Another Terraform operation is in progress\n"
-                    stderr += "2. A previous operation ended abnormally\n"
-                    stderr += f"\nYou can force-unlock with: toffee run {env.name} force-unlock [LOCK_ID]\n"
-                
-                elif error_name == "invalid_json":
-                    stderr += "\n\nToffee Tip: There's an issue with your JSON formatting. Check your variable files or module inputs."
-                
-                elif error_name == "invalid_module_path":
-                    stderr += "\n\nToffee Tip: Module not found. Make sure module paths are correct and run 'toffee init' if you've added new modules."
-                
-                break
-                
-        return stderr

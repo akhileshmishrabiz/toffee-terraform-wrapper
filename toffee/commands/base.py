@@ -3,13 +3,9 @@ Base command handler for the Toffee CLI tool
 """
 
 import os
-import re
-from typing import List, Optional, Dict, Tuple, Any
+from typing import List, Optional
 from rich.console import Console
 from rich.table import Table
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.markdown import Markdown
 
 from ..core.environment import EnvironmentManager
 from ..core.terraform import TerraformRunner
@@ -35,9 +31,6 @@ class BaseCommand:
         # Initialize terraform runner
         terraform_path = self.project_config.get("terraform_path", "terraform")
         self.terraform = TerraformRunner(terraform_path=terraform_path)
-        
-        # Set verbosity level
-        self.verbose = self.project_config.get("verbose", False)
 
     def validate_environment(self, env_name: str) -> bool:
         """
@@ -52,14 +45,14 @@ class BaseCommand:
         valid, error_msg = self.env_manager.validate_environment(env_name)
 
         if not valid:
-            error_console.print(f"[bold red]Error:[/] {error_msg}")
+            error_console.print(f"Error: {error_msg}")
 
             # If environment wasn't found, suggest a similar one
             if "not found" in error_msg:
                 suggestion = self.env_manager.suggest_environment(env_name)
                 if suggestion:
                     error_console.print(
-                        f"[yellow]Did you mean:[/] [bold]{suggestion}[/]?"
+                        f"Did you mean: {suggestion}?"
                     )
 
             return False
@@ -72,7 +65,7 @@ class BaseCommand:
 
         if not env_names:
             console.print(
-                "[yellow]No environments found.[/] Make sure you have .tfvars files in the vars/ directory."
+                "No environments found. Make sure you have .tfvars files in the vars/ directory."
             )
             return
 
@@ -104,73 +97,19 @@ class BaseCommand:
         cmd_names = self.terraform.get_command_names()
 
         if not cmd_names:
-            console.print("[yellow]No Terraform commands available.[/]")
+            console.print("No Terraform commands available.")
             return
 
         # Create a table of commands
         table = Table(title="Available Terraform Commands")
         table.add_column("Command", style="cyan")
         table.add_column("Description", style="green")
-        table.add_column("Requires var file", style="yellow")
-        table.add_column("Requires backend config", style="yellow")
 
-        for name in sorted(cmd_names):
+        for name in cmd_names:
             cmd = self.terraform.get_command(name)
-            if cmd:
-                table.add_row(
-                    name, 
-                    cmd.description,
-                    "✓" if cmd.needs_vars_file else "✗",
-                    "✓" if cmd.needs_backend_config else "✗"
-                )
+            table.add_row(name, cmd.description)
 
         console.print(table)
-
-    def _format_terraform_output(self, output: str) -> None:
-        """
-        Format and display Terraform output with syntax highlighting
-        
-        Args:
-            output: Terraform output string
-        """
-        if not output.strip():
-            return
-            
-        # Check if output contains JSON
-        if output.strip().startswith('{') or output.strip().startswith('['):
-            try:
-                # Try to parse as JSON for better formatting
-                syntax = Syntax(output, "json", theme="monokai", line_numbers=False)
-                console.print(syntax)
-                return
-            except Exception:
-                pass
-                
-        # Handle HCL/Terraform output with proper coloring
-        # Look for common Terraform output patterns
-        lines = output.split('\n')
-        formatted_output = []
-        
-        for line in lines:
-            # Color Terraform resource addresses
-            if re.match(r'^\s*[+#~-]?\s*\w+\.\w+(\.\w+)*(\[\d+\])?:', line):
-                line = re.sub(r'^(\s*[+#~-]?\s*)(\w+\.\w+(\.\w+)*(\[\d+\])?:)', r'\1[cyan]\2[/]', line)
-                
-            # Color plan summary items
-            if re.search(r'Plan:', line) or re.search(r'Apply complete!', line):
-                line = f"[bold green]{line}[/]"
-                
-            # Color warnings
-            if "warning" in line.lower():
-                line = f"[yellow]{line}[/]"
-                
-            # Format Terraform "Error:" lines with red
-            if re.search(r'Error:', line):
-                line = re.sub(r'(Error:.*)', r'[bold red]\1[/]', line)
-                
-            formatted_output.append(line)
-            
-        console.print("\n".join(formatted_output))
 
     def execute_terraform_command(
         self, env_name: str, command_name: str, extra_args: List[str] = None
@@ -198,38 +137,24 @@ class BaseCommand:
         cmd_str = " ".join(cmd)
 
         # Display command
-        console.print(f"[bold blue]Running:[/] {cmd_str}")
-        console.print("")  # Add spacing for readability
-        
-        # Special handling for fmt command which might not need environment files
-        if command_name == "fmt" and not os.path.exists(env.vars_file):
-            # For fmt command, we don't need the var file
-            cmd = [self.terraform.terraform_path, command_name]
-            if extra_args:
-                cmd.extend(extra_args)
-                
+        console.print(f"Running: {cmd_str}")
+
         # Run command
         return_code, stdout, stderr = self.terraform.run_command(
             command_name, env, extra_args
         )
 
-        # Display formatted output
+        # Display output
         if stdout:
-            self._format_terraform_output(stdout)
-            
+            print(stdout)
         if stderr:
-            if return_code != 0:
-                error_console.print("\n[bold red]Error output:[/]")
-                error_console.print(stderr)
-            else:
-                # Sometimes terraform sends valid output to stderr
-                self._format_terraform_output(stderr)
+            print(stderr)
 
         if return_code == 0:
-            console.print("\n[bold green]Command succeeded[/]")
+            console.print("Command succeeded")
         else:
-            error_console.print(
-                f"\n[bold red]Command failed with exit code {return_code}[/]"
+            console.print(
+                f"Command failed with exit code {return_code}"
             )
 
         return return_code
