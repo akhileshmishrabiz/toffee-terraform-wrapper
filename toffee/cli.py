@@ -3,12 +3,13 @@ Main CLI entrypoint for the Toffee CLI tool
 """
 
 import typer
-from typing import List
+from typing import List, Optional
 from rich.console import Console
 
 from .commands.terraform import TerraformCommands
 from .commands.info import InfoCommands
 from .commands.config import ConfigCommands
+from .commands.env import EnvCommands
 
 app = typer.Typer(
     name="toffee",
@@ -18,9 +19,11 @@ app = typer.Typer(
 
 info_app = typer.Typer(help="Information commands")
 config_app = typer.Typer(help="Configuration commands")
+env_app = typer.Typer(help="Environment management commands")
 
 app.add_typer(info_app, name="info")
 app.add_typer(config_app, name="config")
+app.add_typer(env_app, name="env")
 
 console = Console()
 error_console = Console(stderr=True)
@@ -39,6 +42,11 @@ def get_info_commands() -> InfoCommands:
 def get_config_commands() -> ConfigCommands:
     """Get the configuration commands handler"""
     return ConfigCommands()
+
+
+def get_env_commands() -> EnvCommands:
+    """Get the environment commands handler"""
+    return EnvCommands()
 
 
 @app.callback()
@@ -149,6 +157,37 @@ def output(
 
 
 @app.command()
+def fmt(
+    env: str = typer.Argument(None, help="Environment name (optional)"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
+):
+    """Format Terraform configuration files"""
+    cmd = get_terraform_commands()
+    exit_code = cmd.fmt(env or "default", args)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def validate(
+    env: str = typer.Argument(None, help="Environment name"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
+):
+    """Validate Terraform configuration files"""
+    if not env:
+        error_console.print("[bold red]Error:[/] Environment name is required")
+        error_console.print("[yellow]Usage:[/] toffee validate [ENVIRONMENT]")
+        raise typer.Exit(code=1)
+
+    cmd = get_terraform_commands()
+    exit_code = cmd.validate(env, args)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
 def run(
     env: str = typer.Argument(..., help="Environment name"),
     command: str = typer.Argument(..., help="Terraform command to run"),
@@ -159,6 +198,32 @@ def run(
     """Run a custom Terraform command for the specified environment"""
     cmd = get_terraform_commands()
     exit_code = cmd.run_command(env, command, args)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def state(
+    env: str = typer.Argument(..., help="Environment name"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
+):
+    """Run state management commands for the specified environment"""
+    cmd = get_terraform_commands()
+    exit_code = cmd.run_command(env, "state", args)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def workspace(
+    env: str = typer.Argument(..., help="Environment name"),
+    args: List[str] = typer.Argument(
+        None, help="Additional arguments to pass to Terraform"
+    ),
+):
+    """Run workspace management commands for the specified environment"""
+    cmd = get_terraform_commands()
+    exit_code = cmd.run_command(env, "workspace", args)
     raise typer.Exit(code=exit_code)
 
 
@@ -188,6 +253,14 @@ def show_env_info(
     raise typer.Exit(code=exit_code)
 
 
+@info_app.command("version")
+def show_version():
+    """Show Toffee and Terraform versions"""
+    cmd = get_info_commands()
+    exit_code = cmd.show_version()
+    raise typer.Exit(code=exit_code)
+
+
 @config_app.command("show")
 def show_config():
     """Show the current configuration"""
@@ -212,6 +285,27 @@ def init_project_config():
     """Initialize a project configuration file"""
     cmd = get_config_commands()
     exit_code = cmd.init_project_config()
+    raise typer.Exit(code=exit_code)
+
+
+@env_app.command("create")
+def create_environment(
+    name: str = typer.Argument(..., help="Environment name"),
+):
+    """Create a new environment with template files"""
+    cmd = get_env_commands()
+    exit_code = cmd.create_environment(name)
+    raise typer.Exit(code=exit_code)
+
+
+@env_app.command("copy")
+def copy_environment(
+    source: str = typer.Argument(..., help="Source environment name"),
+    target: str = typer.Argument(..., help="Target environment name"),
+):
+    """Copy an existing environment to a new one"""
+    cmd = get_env_commands()
+    exit_code = cmd.copy_environment(source, target)
     raise typer.Exit(code=exit_code)
 
 

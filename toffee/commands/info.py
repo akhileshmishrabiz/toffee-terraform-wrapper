@@ -3,9 +3,11 @@ Information commands for the Toffee CLI tool
 """
 
 import os
+import subprocess
 from rich.console import Console
 from rich.panel import Panel
 from rich import box
+from rich.table import Table
 
 from .base import BaseCommand
 from .. import __version__
@@ -29,8 +31,37 @@ class InfoCommands(BaseCommand):
         return 0
 
     def show_version(self) -> int:
-        """Show the version of Toffee"""
-        console.print(f"[bold cyan]Toffee[/] version [bold green]{__version__}[/]")
+        """Show the version of Toffee and Terraform"""
+        # Get Toffee version
+        toffee_version = __version__
+        
+        # Try to get Terraform version
+        terraform_version = "Not installed"
+        try:
+            result = subprocess.run(
+                [self.terraform.terraform_path, "-version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                # Extract the version line
+                for line in result.stdout.splitlines():
+                    if "Terraform v" in line:
+                        terraform_version = line.strip()
+                        break
+        except Exception:
+            pass
+            
+        # Create a table
+        table = Table(title="Versions")
+        table.add_column("Component", style="cyan")
+        table.add_column("Version", style="green")
+        
+        table.add_row("Toffee", toffee_version)
+        table.add_row("Terraform", terraform_version)
+        
+        console.print(table)
         return 0
 
     def show_env_info(self, env_name: str) -> int:
@@ -81,5 +112,5 @@ class InfoCommands(BaseCommand):
                 )
             except Exception as e:
                 console.print(f"[yellow]Could not read backend file: {e}[/]")
-
-        return
+                
+        return 0

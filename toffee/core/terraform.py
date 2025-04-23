@@ -4,7 +4,9 @@ Terraform command execution for the Toffee CLI tool
 
 import subprocess
 import logging
-from typing import List, Optional, Dict, Tuple
+import os
+import re
+from typing import List, Optional, Dict, Tuple, Any
 from dataclasses import dataclass
 
 from .environment import Environment
@@ -70,10 +72,51 @@ class TerraformRunner:
             name="fmt",
             description="Format the configuration files",
             needs_vars_file=False,
+            needs_backend_config=False,
         ),
         "state": TerraformCommand(
-            name="state", description="Advanced state management", needs_vars_file=False
+            name="state", 
+            description="Advanced state management", 
+            needs_vars_file=False,
+            needs_backend_config=False,
         ),
+        "workspace": TerraformCommand(
+            name="workspace",
+            description="Workspace management",
+            needs_vars_file=False,
+            needs_backend_config=False,
+        ),
+        "import": TerraformCommand(
+            name="import",
+            description="Import existing infrastructure into Terraform",
+            needs_vars_file=True,
+        ),
+        "graph": TerraformCommand(
+            name="graph",
+            description="Create a visual graph of Terraform resources",
+            needs_vars_file=False,
+        ),
+        "providers": TerraformCommand(
+            name="providers",
+            description="Show information about providers",
+            needs_vars_file=False,
+        ),
+        "version": TerraformCommand(
+            name="version",
+            description="Show Terraform version",
+            needs_vars_file=False,
+            needs_backend_config=False,
+        ),
+    }
+
+    # Common error patterns to handle specially
+    ERROR_PATTERNS = {
+        "no_s3_bucket": r"S3 bucket \"(.*?)\" does not exist",
+        "no_workspace": r"workspace \"(.*?)\" does not exist",
+        "no_terraform_files": r"No Terraform configuration files",
+        "locked_state": r"Error: (.*?) is locked",
+        "invalid_json": r"Error: Invalid JSON",
+        "invalid_module_path": r"Error: Module not found",
     }
 
     def __init__(self, terraform_path: str = "terraform"):
@@ -110,19 +153,20 @@ class TerraformRunner:
         command = self.get_command(command_name)
         if command:
             # Add backend config if needed
-            if command.needs_backend_config:
+            if command.needs_backend_config and os.path.exists(env.backend_file):
                 cmd.append(f"-backend-config={env.backend_file}")
 
             # Add var file if needed
-            if command.needs_vars_file:
+            if command.needs_vars_file and os.path.exists(env.vars_file):
                 cmd.append(f"-var-file={env.vars_file}")
 
             # Add default args for this command
             if command.default_args:
                 cmd.extend(command.default_args)
         else:
-            # For custom/unknown commands, just add the var file
-            cmd.append(f"-var-file={env.vars_file}")
+            # For custom/unknown commands, add the var file only if it exists
+            if os.path.exists(env.vars_file):
+                cmd.append(f"-var-file={env.vars_file}")
 
         # Add any extra args
         if extra_args:
@@ -155,7 +199,59 @@ class TerraformRunner:
                 text=True,
                 check=False,  # Don't raise an exception on non-zero exit
             )
+            
+            # Analyze the output for known error patterns
+            if result.returncode != 0:
+                enhanced_stderr = self._enhance_error_output(result.stderr, env)
+                return result.returncode, result.stdout, enhanced_stderr
+            
             return result.returncode, result.stdout, result.stderr
         except Exception as e:
             logger.error(f"Error running command: {e}")
             return 1, "", str(e)
+    
+    def _enhance_error_output(self, stderr: str, env: Environment) -> str:
+        """
+        Enhance error output with more helpful information
+        
+        Args:
+            stderr: The original stderr output
+            env: The environment
+            
+        Returns:
+            Enhanced error message
+        """
+        # Check for known error patterns
+        for error_name, pattern in self.ERROR_PATTERNS.items():
+            match = re.search(pattern, stderr)
+            if match:
+                if error_name == "no_s3_bucket" and match.group(1):
+                    bucket_name = match.group(1)
+                    stderr += f"\n\nToffee Tip: The S3 bucket '{bucket_name}' doesn't exist. You may need to:\n"
+                    stderr += f"1. Create the bucket: aws s3 mb s3://{bucket_name}\n"
+                    stderr += f"2. Enable versioning: aws s3api put-bucket-versioning --bucket {bucket_name} --versioning-configuration Status=Enabled\n"
+                
+                elif error_name == "no_workspace" and match.group(1):
+                    workspace = match.group(1)
+                    stderr += f"\n\nToffee Tip: The workspace '{workspace}' doesn't exist. You may need to create it:\n"
+                    stderr += f"toffee run {env.name} workspace new {workspace}\n"
+                
+                elif error_name == "no_terraform_files":
+                    stderr += "\n\nToffee Tip: No Terraform configuration files found. Make sure you're in the right directory."
+                
+                elif error_name == "locked_state" and match.group(1):
+                    state_file = match.group(1)
+                    stderr += "\n\nToffee Tip: The state file is locked. This usually happens when:\n"
+                    stderr += "1. Another Terraform operation is in progress\n"
+                    stderr += "2. A previous operation ended abnormally\n"
+                    stderr += f"\nYou can force-unlock with: toffee run {env.name} force-unlock [LOCK_ID]\n"
+                
+                elif error_name == "invalid_json":
+                    stderr += "\n\nToffee Tip: There's an issue with your JSON formatting. Check your variable files or module inputs."
+                
+                elif error_name == "invalid_module_path":
+                    stderr += "\n\nToffee Tip: Module not found. Make sure module paths are correct and run 'toffee init' if you've added new modules."
+                
+                break
+                
+        return stderr
