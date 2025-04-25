@@ -1,2 +1,0 @@
-bucket = "tf-state"
-key = "prod/terraform.tfstate"

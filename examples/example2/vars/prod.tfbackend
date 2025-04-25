@@ -1,0 +1,4 @@
+bucket  = "my-terraform-state"
+key     = "terraform/multi-region/prod/terraform.tfstate"
+region  = "eu-west-1"  # Store state in primary region
+encrypt = true
