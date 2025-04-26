@@ -49,7 +49,7 @@ def get_env_commands() -> EnvCommands:
     return EnvCommands()
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)  # This is key to make --version work alone
 def main(
     ctx: typer.Context,
     version: bool = typer.Option(
@@ -59,11 +59,16 @@ def main(
     """
     Toffee - A modern CLI tool for deploying Terraform across multiple environments
     """
+    # If version flag was passed or no command was provided, show version and exit
     if version:
         from . import __version__
-
         console.print(f"Toffee version {__version__}")
-        raise typer.Exit()
+        raise typer.Exit(0)
+        
+    # If no command was provided, show help
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit(1)
 
 
 @app.command()
