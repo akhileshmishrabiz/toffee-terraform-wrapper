@@ -51,9 +51,7 @@ class BaseCommand:
             if "not found" in error_msg:
                 suggestion = self.env_manager.suggest_environment(env_name)
                 if suggestion:
-                    error_console.print(
-                        f"Did you mean: {suggestion}?"
-                    )
+                    error_console.print(f"Did you mean: {suggestion}?")
 
             return False
 
@@ -139,22 +137,23 @@ class BaseCommand:
         # Display command
         console.print(f"Running: {cmd_str}")
 
-        # Run command
-        return_code, stdout, stderr = self.terraform.run_command(
-            command_name, env, extra_args
-        )
-
-        # Display output
-        if stdout:
-            print(stdout)
-        if stderr:
-            print(stderr)
-
-        if return_code == 0:
-            console.print("Command succeeded")
-        else:
-            console.print(
-                f"Command failed with exit code {return_code}"
+        # Run command directly to allow for interactive prompts
+        try:
+            process = subprocess.Popen(
+                cmd,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,  # Use text mode
             )
 
-        return return_code
+            # Wait for completion
+            return_code = process.wait()
+
+            if return_code == 0:
+                console.print("Command succeeded")
+            else:
+                console.print(f"Command failed with exit code {return_code}")
+
+            return return_code
+        except Exception as e:
+            error_console.print(f"Error executing command: {e}")
+            return 1

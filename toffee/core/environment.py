@@ -22,12 +22,12 @@ class Environment:
     def is_valid(self) -> bool:
         """Check if the environment has valid files"""
         return os.path.isfile(self.vars_file) and os.path.isfile(self.backend_file)
-        
+
     @property
     def is_partially_valid(self) -> bool:
         """Check if at least the vars file exists"""
         return os.path.isfile(self.vars_file)
-        
+
     def get_missing_files(self) -> List[str]:
         """Get a list of missing files"""
         missing = []
@@ -75,10 +75,10 @@ class EnvironmentManager:
             self._environments[env_name] = Environment(
                 name=env_name, vars_file=vars_file, backend_file=backend_file
             )
-            
+
         # Also check for backend files without corresponding vars files
         backend_files = glob.glob(os.path.join(self.vars_dir, "*.tfbackend"))
-        
+
         for backend_file in backend_files:
             env_name = Path(backend_file).stem
             if env_name not in self._environments:
@@ -109,7 +109,7 @@ class EnvironmentManager:
             # Create the environment on the fly for commands that might not need vars files
             vars_file = os.path.join(self.vars_dir, f"{name}.tfvars")
             backend_file = os.path.join(self.vars_dir, f"{name}.tfbackend")
-            
+
             # Check if either file exists
             if os.path.isfile(vars_file) or os.path.isfile(backend_file):
                 self._environments[name] = Environment(
@@ -149,25 +149,25 @@ class EnvironmentManager:
         for env in available:
             if name in env:
                 return env
-                
+
         # Try Levenshtein distance for better suggestions
         # Simple implementation - could be replaced with a proper library
         best_match = None
-        best_score = float('inf')
-        
+        best_score = float("inf")
+
         for env in available:
             distance = self._levenshtein_distance(name, env)
             if distance < best_score:
                 best_score = distance
                 best_match = env
-                
+
         # Only suggest if reasonably close
         if best_score <= len(name) / 2:
             return best_match
 
         # Return the first available as fallback if nothing matches
         return available[0] if available else None
-        
+
     def _levenshtein_distance(self, s1: str, s2: str) -> int:
         """Simple Levenshtein distance implementation"""
         if len(s1) < len(s2):
@@ -180,49 +180,49 @@ class EnvironmentManager:
         for i, c1 in enumerate(s1):
             current_row = [i + 1]
             for j, c2 in enumerate(s2):
-                insertions = previous_row[j + 1] + 1 
+                insertions = previous_row[j + 1] + 1
                 deletions = current_row[j] + 1
                 substitutions = previous_row[j] + (c1 != c2)
                 current_row.append(min(insertions, deletions, substitutions))
             previous_row = current_row
-            
+
         return previous_row[-1]
 
     def create_environment_template(self, name: str) -> bool:
         """
         Create template files for a new environment
-        
+
         Args:
             name: Name for the new environment
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             # Make sure the vars directory exists
             os.makedirs(self.vars_dir, exist_ok=True)
-            
+
             # Create vars file
             vars_file = os.path.join(self.vars_dir, f"{name}.tfvars")
             if not os.path.exists(vars_file):
                 with open(vars_file, "w") as f:
                     f.write(f"# Terraform variables for {name} environment\n\n")
-                    
+
             # Create backend file
             backend_file = os.path.join(self.vars_dir, f"{name}.tfbackend")
             if not os.path.exists(backend_file):
                 with open(backend_file, "w") as f:
                     f.write(f"# Backend configuration for {name} environment\n\n")
-                    f.write("bucket = \"your-terraform-state-bucket\"\n")
-                    f.write(f"key = \"terraform/{name}/terraform.tfstate\"\n")
-                    f.write("region = \"us-east-1\"\n")
+                    f.write('bucket = "your-terraform-state-bucket"\n')
+                    f.write(f'key = "terraform/{name}/terraform.tfstate"\n')
+                    f.write('region = "us-east-1"\n')
                     f.write("encrypt = true\n")
-                    
+
             # Add the environment to our collection
             self._environments[name] = Environment(
                 name=name, vars_file=vars_file, backend_file=backend_file
             )
-            
+
             return True
         except Exception as e:
             print(f"Error creating environment: {e}")

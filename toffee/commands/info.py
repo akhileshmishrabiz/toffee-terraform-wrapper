@@ -34,7 +34,7 @@ class InfoCommands(BaseCommand):
         """Show the version of Toffee and Terraform"""
         # Get Toffee version
         toffee_version = __version__
-        
+
         # Try to get Terraform version
         terraform_version = "Not installed"
         try:
@@ -52,15 +52,15 @@ class InfoCommands(BaseCommand):
                         break
         except Exception:
             pass
-            
+
         # Create a table
         table = Table(title="Versions")
         table.add_column("Component", style="cyan")
         table.add_column("Version", style="green")
-        
+
         table.add_row("Toffee", toffee_version)
         table.add_row("Terraform", terraform_version)
-        
+
         console.print(table)
         return 0
 
@@ -112,5 +112,5 @@ class InfoCommands(BaseCommand):
                 )
             except Exception as e:
                 console.print(f"[yellow]Could not read backend file: {e}[/]")
-                
+
         return 0

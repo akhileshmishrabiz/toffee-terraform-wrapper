@@ -183,7 +183,7 @@ def fmt(
 ):
     """Format Terraform configuration files"""
     cmd = get_terraform_commands()
-    exit_code = cmd.fmt(env, args) 
+    exit_code = cmd.fmt(env, args)
     raise typer.Exit(code=exit_code)
 
 

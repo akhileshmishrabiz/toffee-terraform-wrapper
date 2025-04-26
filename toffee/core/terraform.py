@@ -74,8 +74,8 @@ class TerraformRunner:
             needs_backend_config=False,
         ),
         "state": TerraformCommand(
-            name="state", 
-            description="Advanced state management", 
+            name="state",
+            description="Advanced state management",
             needs_vars_file=False,
             needs_backend_config=False,
         ),
@@ -120,7 +120,10 @@ class TerraformRunner:
         return list(self.COMMANDS.keys())
 
     def build_command(
-        self, command_name: str, env: Optional[Environment] = None, extra_args: List[str] = None
+        self,
+        command_name: str,
+        env: Optional[Environment] = None,
+        extra_args: List[str] = None,
     ) -> List[str]:
         """
         Build a Terraform command with the appropriate options for the environment
@@ -166,7 +169,10 @@ class TerraformRunner:
         return cmd
 
     def run_command(
-        self, command_name: str, env: Optional[Environment] = None, extra_args: List[str] = None
+        self,
+        command_name: str,
+        env: Optional[Environment] = None,
+        extra_args: List[str] = None,
     ) -> Tuple[int, str, str]:
         """
         Run a Terraform command
@@ -184,14 +190,33 @@ class TerraformRunner:
         logger.debug(f"Running command: {' '.join(cmd)}")
 
         try:
-            result = subprocess.run(
+            # Run the process with direct output to ensure interactive prompts work
+            process = subprocess.Popen(
                 cmd,
-                capture_output=True,
-                text=True,
-                check=False,  # Don't raise an exception on non-zero exit
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1,  # Line buffered
             )
-            
-            return result.returncode, result.stdout, result.stderr
+
+            # Capture output while displaying it
+            stdout_lines = []
+            stderr_lines = []
+
+            # Process stdout
+            for line in process.stdout:
+                stdout_lines.append(line)
+                print(line, end="")
+
+            # Process stderr
+            for line in process.stderr:
+                stderr_lines.append(line)
+                print(line, end="")
+
+            # Wait for process to complete
+            return_code = process.wait()
+
+            return return_code, "".join(stdout_lines), "".join(stderr_lines)
         except Exception as e:
             logger.error(f"Error running command: {e}")
             return 1, "", str(e)
