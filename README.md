@@ -18,9 +18,12 @@ Managing multiple environments (development, staging, production) in Terraform t
 # Install from GitHub
 pip install  git+https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
 
+```
+```bash
 # Upgrade
 pip install --upgrade --force-reinstall git+https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
-
+```
+```bash
 
 # Verify installation
 toffee --version

@@ -3,6 +3,7 @@ Base command handler for the Toffee CLI tool
 """
 
 import os
+import subprocess  # Add this import
 from typing import List, Optional
 from rich.console import Console
 from rich.table import Table
@@ -51,7 +52,9 @@ class BaseCommand:
             if "not found" in error_msg:
                 suggestion = self.env_manager.suggest_environment(env_name)
                 if suggestion:
-                    error_console.print(f"Did you mean: {suggestion}?")
+                    error_console.print(
+                        f"Did you mean: {suggestion}?"
+                    )
 
             return False
 
@@ -142,17 +145,17 @@ class BaseCommand:
             process = subprocess.Popen(
                 cmd,
                 bufsize=1,  # Line buffered
-                universal_newlines=True,  # Use text mode
+                universal_newlines=True  # Use text mode
             )
-
+            
             # Wait for completion
             return_code = process.wait()
-
+            
             if return_code == 0:
                 console.print("Command succeeded")
             else:
                 console.print(f"Command failed with exit code {return_code}")
-
+                
             return return_code
         except Exception as e:
             error_console.print(f"Error executing command: {e}")
