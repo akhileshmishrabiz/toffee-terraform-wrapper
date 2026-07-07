@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "toffee"
-version = "0.1.0"
+version = "0.2.0"
 description = "A modern CLI tool for deploying Terraform across multiple environments"
 authors = [
     {name = "Akhilesh Mishra", email = "akhileshmishrabiz@gmail.com"}
@@ -14,6 +14,13 @@ requires-python = ">=3.8"
 dependencies = [
     "typer>=0.7.0",
     "rich>=12.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
 ]
 
 [project.scripts]

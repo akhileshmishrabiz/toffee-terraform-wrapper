@@ -2,15 +2,18 @@
 Terraform command execution for the Toffee CLI tool
 """
 
-import subprocess
 import logging
 import os
-from typing import List, Optional, Dict, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 from .environment import Environment
 
 logger = logging.getLogger(__name__)
+
+STATE_SUBCOMMANDS = frozenset(
+    {"list", "show", "mv", "rm", "pull", "push", "replace-provider"}
+)
 
 
 @dataclass
@@ -21,26 +24,24 @@ class TerraformCommand:
     description: str
     needs_vars_file: bool = True
     needs_backend_config: bool = False
-    default_args: List[str] = None
-
-    def __post_init__(self):
-        if self.default_args is None:
-            self.default_args = []
+    default_args: List[str] = field(default_factory=list)
 
 
 class TerraformRunner:
-    """Handles the execution of Terraform commands"""
+    """Builds Terraform command lines for environment-aware execution."""
 
-    # Define standard terraform commands
     COMMANDS: Dict[str, TerraformCommand] = {
         "init": TerraformCommand(
             name="init",
             description="Initialize a Terraform working directory",
             needs_vars_file=False,
             needs_backend_config=True,
+            default_args=["-reconfigure"],
         ),
         "plan": TerraformCommand(
-            name="plan", description="Create an execution plan", needs_vars_file=True
+            name="plan",
+            description="Create an execution plan",
+            needs_vars_file=True,
         ),
         "apply": TerraformCommand(
             name="apply",
@@ -106,6 +107,46 @@ class TerraformRunner:
             needs_vars_file=False,
             needs_backend_config=False,
         ),
+        "test": TerraformCommand(
+            name="test",
+            description="Run experimental tests",
+            needs_vars_file=True,
+        ),
+        "console": TerraformCommand(
+            name="console",
+            description="Interactive console for Terraform expressions",
+            needs_vars_file=True,
+        ),
+        "show": TerraformCommand(
+            name="show",
+            description="Show the current state or a saved plan",
+            needs_vars_file=False,
+        ),
+        "get": TerraformCommand(
+            name="get",
+            description="Install or upgrade remote Terraform modules",
+            needs_vars_file=False,
+        ),
+        "login": TerraformCommand(
+            name="login",
+            description="Obtain and save credentials for a remote host",
+            needs_vars_file=False,
+        ),
+        "force-unlock": TerraformCommand(
+            name="force-unlock",
+            description="Release a stuck state lock",
+            needs_vars_file=False,
+        ),
+        "taint": TerraformCommand(
+            name="taint",
+            description="Mark a resource for recreation",
+            needs_vars_file=False,
+        ),
+        "untaint": TerraformCommand(
+            name="untaint",
+            description="Remove the taint from a resource",
+            needs_vars_file=False,
+        ),
     }
 
     def __init__(self, terraform_path: str = "terraform"):
@@ -117,106 +158,62 @@ class TerraformRunner:
 
     def get_command_names(self) -> List[str]:
         """Get a list of all available command names"""
-        return list(self.COMMANDS.keys())
+        return sorted(self.COMMANDS.keys())
 
     def build_command(
         self,
         command_name: str,
         env: Optional[Environment] = None,
-        extra_args: List[str] = None,
+        extra_args: Optional[List[str]] = None,
     ) -> List[str]:
         """
-        Build a Terraform command with the appropriate options for the environment
-
-        Args:
-            command_name: The name of the Terraform command to run
-            env: The environment to run the command in (optional)
-            extra_args: Additional arguments to pass to the command
-
-        Returns:
-            The command as a list of strings
+        Build a Terraform command with the appropriate options for the environment.
         """
         if extra_args is None:
             extra_args = []
 
         cmd = [self.terraform_path, command_name]
+        command = self.get_command(command_name)
 
-        # Only add environment-specific args if an environment is provided
         if env:
-            # Get command configuration
-            command = self.get_command(command_name)
             if command:
-                # Add backend config if needed
-                if command.needs_backend_config and os.path.exists(env.backend_file):
+                if command.needs_backend_config and os.path.isfile(env.backend_file):
                     cmd.append(f"-backend-config={env.backend_file}")
 
-                # Add var file if needed
-                if command.needs_vars_file and os.path.exists(env.vars_file):
+                if command.needs_vars_file and os.path.isfile(env.vars_file):
                     cmd.append(f"-var-file={env.vars_file}")
 
-                # Add default args for this command
                 if command.default_args:
                     cmd.extend(command.default_args)
-            else:
-                # For custom/unknown commands, add the var file only if it exists
-                if os.path.exists(env.vars_file):
-                    cmd.append(f"-var-file={env.vars_file}")
+            elif os.path.isfile(env.vars_file):
+                cmd.append(f"-var-file={env.vars_file}")
 
-        # Add any extra args
-        if extra_args:
-            cmd.extend(extra_args)
-
+        cmd.extend(extra_args)
         return cmd
 
-    def run_command(
-        self,
-        command_name: str,
-        env: Optional[Environment] = None,
-        extra_args: List[str] = None,
-    ) -> Tuple[int, str, str]:
+    @staticmethod
+    def parse_state_arguments(
+        env_arg: Optional[str],
+        extra_args: Optional[List[str]],
+        known_envs: List[str],
+    ) -> Tuple[Optional[str], List[str]]:
         """
-        Run a Terraform command
+        Parse state command arguments.
 
-        Args:
-            command_name: The name of the Terraform command to run
-            env: The environment to run the command in (optional)
-            extra_args: Additional arguments to pass to the command
-
-        Returns:
-            Tuple of (return_code, stdout, stderr)
+        Supports:
+          toffee state list
+          toffee state dev list
         """
-        cmd = self.build_command(command_name, env, extra_args)
+        extra_args = extra_args or []
+        known_env_set = set(known_envs)
 
-        logger.debug(f"Running command: {' '.join(cmd)}")
+        if env_arg is None:
+            return None, extra_args
 
-        try:
-            # Run the process with direct output to ensure interactive prompts work
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                bufsize=1,  # Line buffered
-            )
+        if env_arg in known_env_set:
+            return env_arg, extra_args
 
-            # Capture output while displaying it
-            stdout_lines = []
-            stderr_lines = []
+        if env_arg in STATE_SUBCOMMANDS:
+            return None, [env_arg, *extra_args]
 
-            # Process stdout
-            for line in process.stdout:
-                stdout_lines.append(line)
-                print(line, end="")
-
-            # Process stderr
-            for line in process.stderr:
-                stderr_lines.append(line)
-                print(line, end="")
-
-            # Wait for process to complete
-            return_code = process.wait()
-
-            return return_code, "".join(stdout_lines), "".join(stderr_lines)
-        except Exception as e:
-            logger.error(f"Error running command: {e}")
-            return 1, "", str(e)
+        return env_arg, extra_args

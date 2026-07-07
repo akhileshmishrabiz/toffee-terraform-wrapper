@@ -59,8 +59,8 @@ class ConfigCommands(BaseCommand):
         console.print(table)
         return 0
 
-    def set_config(self, key: str, value: str) -> int:
-        """Set a global configuration value"""
+    def set_config(self, key: str, value: str, project: bool = False) -> int:
+        """Set a configuration value"""
         # Validate key
         if key not in DEFAULT_CONFIG:
             console.print(f"[bold red]Error:[/] Unknown configuration key: {key}")
@@ -95,8 +95,25 @@ class ConfigCommands(BaseCommand):
             typed_value = value
 
         # Set the value
-        self.config.set(key, typed_value)
-        console.print(f"[green]Set [bold]{key}[/] to [bold]{typed_value}[/][/]")
+        if project:
+            project_config_file = os.path.join(os.getcwd(), ".toffee.json")
+            project_config = {}
+            if os.path.exists(project_config_file):
+                try:
+                    with open(project_config_file, "r") as f:
+                        project_config = json.load(f)
+                except json.JSONDecodeError:
+                    project_config = {}
+
+            project_config[key] = typed_value
+            with open(project_config_file, "w") as f:
+                json.dump(project_config, f, indent=2)
+            console.print(
+                f"[green]Set project [bold]{key}[/] to [bold]{typed_value}[/][/]"
+            )
+        else:
+            self.config.set(key, typed_value)
+            console.print(f"[green]Set global [bold]{key}[/] to [bold]{typed_value}[/][/]")
         return 0
 
     def init_project_config(self) -> int:
@@ -111,7 +128,13 @@ class ConfigCommands(BaseCommand):
                 return 0
 
         # Create a default project config
-        default_project_config = {"vars_dir": "vars", "terraform_path": "terraform"}
+        default_project_config = {
+            "vars_dir": "vars",
+            "terraform_path": "terraform",
+            "default_environment": None,
+            "auto_approve": False,
+            "verbose": False,
+        }
 
         with open(project_config_file, "w") as f:
             json.dump(default_project_config, f, indent=2)

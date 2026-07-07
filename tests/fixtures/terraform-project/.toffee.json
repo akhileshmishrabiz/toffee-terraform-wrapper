@@ -1,0 +1,6 @@
+{
+  "terraform_path": "PLACEHOLDER",
+  "vars_dir": "vars",
+  "default_environment": "dev",
+  "auto_approve": false
+}
