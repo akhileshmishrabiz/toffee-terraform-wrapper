@@ -2,13 +2,14 @@
 Configuration commands for the Toffee CLI tool
 """
 
-import os
 import json
+import os
+
 from rich.console import Console
 from rich.table import Table
 
-from .base import BaseCommand
 from ..core.config import DEFAULT_CONFIG
+from .base import BaseCommand
 
 console = Console()
 
@@ -32,7 +33,7 @@ class ConfigCommands(BaseCommand):
             try:
                 with open(project_config_file, "r") as f:
                     project_config = json.load(f)
-            except Exception:
+            except (OSError, json.JSONDecodeError):
                 pass
 
         # Merged config is what's actually used
@@ -131,7 +132,6 @@ class ConfigCommands(BaseCommand):
         default_project_config = {
             "vars_dir": "vars",
             "terraform_path": "terraform",
-            "default_environment": None,
             "auto_approve": False,
             "verbose": False,
         }

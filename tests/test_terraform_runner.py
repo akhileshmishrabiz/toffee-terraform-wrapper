@@ -45,36 +45,54 @@ class TestTerraformRunner:
         cmd = self.runner.build_command("validate")
         assert cmd == ["/usr/bin/terraform", "validate"]
 
-    def test_build_unknown_command_adds_var_file(self, tmp_path):
+    def test_build_unknown_command_is_untouched(self, tmp_path):
         env = self._make_env(tmp_path)
         cmd = self.runner.build_command("customcmd", env, ["-flag"])
         assert cmd == [
             "/usr/bin/terraform",
             "customcmd",
-            f"-var-file={env.vars_file}",
             "-flag",
         ]
 
-    def test_parse_state_arguments_with_env(self):
-        env, args = TerraformRunner.parse_state_arguments(
-            "dev", ["list"], ["dev", "staging"]
-        )
-        assert env == "dev"
-        assert args == ["list"]
+    def test_apply_saved_plan_does_not_add_var_file(self, tmp_path):
+        env = self._make_env(tmp_path)
+        plan_file = tmp_path / "release-plan"
+        plan_file.touch()
+        cmd = self.runner.build_command("apply", env, [str(plan_file)])
+        assert cmd == ["/usr/bin/terraform", "apply", str(plan_file)]
 
-    def test_parse_state_arguments_without_env(self):
-        env, args = TerraformRunner.parse_state_arguments(
-            "list", [], ["dev", "staging"]
-        )
-        assert env is None
-        assert args == ["list"]
+    def test_init_migrate_state_does_not_add_reconfigure(self, tmp_path):
+        env = self._make_env(tmp_path)
+        cmd = self.runner.build_command("init", env, ["-migrate-state"])
+        assert cmd == [
+            "/usr/bin/terraform",
+            "init",
+            f"-backend-config={env.backend_file}",
+            "-migrate-state",
+        ]
 
-    def test_parse_state_arguments_subcommand_in_extra_args(self):
-        env, args = TerraformRunner.parse_state_arguments(
-            "dev", ["show", "null_resource.example"], ["dev"]
+    def test_user_backend_override_is_not_duplicated(self, tmp_path):
+        env = self._make_env(tmp_path)
+        cmd = self.runner.build_command(
+            "init", env, ["-backend-config=custom.tfbackend"]
         )
-        assert env == "dev"
-        assert args == ["show", "null_resource.example"]
+        assert cmd == [
+            "/usr/bin/terraform",
+            "init",
+            "-backend-config=custom.tfbackend",
+        ]
+
+    def test_global_args_are_before_command(self, tmp_path):
+        env = self._make_env(tmp_path)
+        cmd = self.runner.build_command(
+            "plan", env, global_args=["-compact-warnings"]
+        )
+        assert cmd == [
+            "/usr/bin/terraform",
+            "-compact-warnings",
+            "plan",
+            f"-var-file={env.vars_file}",
+        ]
 
     def test_skips_missing_files(self, tmp_path):
         env = Environment(

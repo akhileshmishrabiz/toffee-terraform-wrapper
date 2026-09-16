@@ -7,7 +7,7 @@ import stat
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from click.testing import CliRunner
 
 from toffee.cli import app
 
@@ -52,20 +52,15 @@ def project_dir(tmp_path, mock_terraform_log):
 def invoke(cli_runner, project_dir):
     project, _log_file, env = project_dir
 
-    def _invoke(*args):
+    def _invoke(*args, input=None):
         previous = os.getcwd()
         os.chdir(project)
         try:
-            return cli_runner.invoke(app, list(args), env=env)
+            return cli_runner.invoke(app, list(args), env=env, input=input)
         finally:
             os.chdir(previous)
 
     return _invoke
-
-
-@pytest.fixture
-def terraform_available():
-    return shutil.which("terraform") is not None
 
 
 @pytest.fixture

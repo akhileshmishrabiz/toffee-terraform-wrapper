@@ -17,7 +17,16 @@ class TestEnvironmentManager:
         assert manager.get_environment_names() == ["dev", "prod"]
 
     def test_validate_env_name_rejects_invalid(self):
-        invalid_names = ["", "../evil", "bad/name", "bad\\name", "has space"]
+        invalid_names = [
+            "",
+            "../evil",
+            "bad/name",
+            "bad\\name",
+            "has space",
+            "env",
+            "config",
+            "info",
+        ]
         for name in invalid_names:
             valid, _ = EnvironmentManager.validate_env_name(name)
             assert valid is False
@@ -62,6 +71,15 @@ class TestEnvironmentManager:
         manager = EnvironmentManager(vars_dir=str(vars_dir))
         assert manager.suggest_environment("de") == "dev"
         assert manager.suggest_environment("stag") == "staging"
+
+    def test_sibling_dir_not_treated_as_inside_vars(self, tmp_path):
+        vars_dir = tmp_path / "vars"
+        vars_dir.mkdir()
+        manager = EnvironmentManager(vars_dir=str(vars_dir))
+        vars_dir_real = os.path.realpath(str(vars_dir))
+
+        assert manager._is_safe_env_path("dev", vars_dir_real) is True
+        assert manager._is_safe_env_path("../vars-evil/dev", vars_dir_real) is False
 
     def test_refresh_environments(self, tmp_path):
         vars_dir = tmp_path / "vars"

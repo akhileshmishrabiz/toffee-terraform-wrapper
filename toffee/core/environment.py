@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 ENV_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+RESERVED_ENV_NAMES = frozenset({"config", "env", "info"})
 
 
 @dataclass
@@ -25,32 +26,13 @@ class Environment:
         """Check if the environment has valid files"""
         return os.path.isfile(self.vars_file) and os.path.isfile(self.backend_file)
 
-    def get_missing_files(self) -> List[str]:
-        """Get a list of missing files"""
-        missing = []
-        if not os.path.isfile(self.vars_file):
-            missing.append(self.vars_file)
-        if not os.path.isfile(self.backend_file):
-            missing.append(self.backend_file)
-        return missing
-
-
 class EnvironmentManager:
     """Manages discovery and validation of Terraform environments"""
 
     def __init__(self, vars_dir: str = "vars"):
-        self.vars_dir = vars_dir
+        self.vars_dir = os.path.abspath(vars_dir)
         self._environments: Dict[str, Environment] = {}
-        self._create_vars_dir_if_needed()
         self.refresh_environments()
-
-    def _create_vars_dir_if_needed(self) -> None:
-        """Create vars directory if it doesn't exist"""
-        if not os.path.isdir(self.vars_dir):
-            try:
-                os.makedirs(self.vars_dir, exist_ok=True)
-            except OSError:
-                pass
 
     def refresh_environments(self) -> None:
         """Discover available environments from the vars directory"""
@@ -88,14 +70,14 @@ class EnvironmentManager:
                 )
 
     def _is_safe_env_path(self, env_name: str, vars_dir_real: str) -> bool:
-        """Ensure resolved env file paths stay inside vars_dir."""
-        vars_path = os.path.realpath(os.path.join(self.vars_dir, f"{env_name}.tfvars"))
-        backend_path = os.path.realpath(
-            os.path.join(self.vars_dir, f"{env_name}.tfbackend")
-        )
-        return vars_path.startswith(vars_dir_real) and backend_path.startswith(
-            vars_dir_real
-        )
+        """Ensure resolved env file paths stay directly inside vars_dir."""
+        for suffix in (".tfvars", ".tfbackend"):
+            candidate = os.path.realpath(
+                os.path.join(self.vars_dir, f"{env_name}{suffix}")
+            )
+            if os.path.dirname(candidate) != vars_dir_real:
+                return False
+        return True
 
     @staticmethod
     def validate_env_name(name: str) -> Tuple[bool, Optional[str]]:
@@ -108,6 +90,8 @@ class EnvironmentManager:
                 "Environment name must start with a letter or digit and contain "
                 "only letters, digits, underscores, and hyphens",
             )
+        if name in RESERVED_ENV_NAMES:
+            return False, f"Environment name '{name}' is reserved by Toffee"
         if ".." in name or "/" in name or "\\" in name:
             return False, f"Invalid environment name: '{name}'"
         return True, None

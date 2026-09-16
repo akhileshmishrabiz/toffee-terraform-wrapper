@@ -34,24 +34,32 @@ class TestRealTerraform:
             for env in ("dev", "staging"):
                 assert (
                     subprocess.run(
-                        ["toffee", "init", env], check=False
+                        ["toffee", env, "init"], check=False
+                    ).returncode
+                    == 0
+                )
+
+            for env in ("dev", "staging"):
+                assert (
+                    subprocess.run(
+                        ["toffee", env, "validate"], check=False
                     ).returncode
                     == 0
                 )
                 assert (
-                    subprocess.run(["toffee", "validate"], check=False).returncode
+                    subprocess.run(
+                        ["toffee", env, "plan"], check=False
+                    ).returncode
                     == 0
                 )
                 assert (
-                    subprocess.run(["toffee", "plan", env], check=False).returncode
-                    == 0
-                )
-                assert (
-                    subprocess.run(["toffee", "apply", env], check=False).returncode
+                    subprocess.run(
+                        ["toffee", env, "apply"], check=False
+                    ).returncode
                     == 0
                 )
                 output = subprocess.run(
-                    ["toffee", "output", env],
+                    ["toffee", env, "output"],
                     check=False,
                     capture_output=True,
                     text=True,
@@ -59,9 +67,12 @@ class TestRealTerraform:
                 assert output.returncode == 0
                 assert env in output.stdout
 
+            for env in ("dev", "staging"):
+                assert (state_root / env / "terraform.tfstate").is_file()
+
             assert (
                 subprocess.run(
-                    ["toffee", "destroy", "dev", "staging"],
+                    ["toffee", "dev,staging", "destroy"],
                     input="y\n",
                     text=True,
                     check=False,

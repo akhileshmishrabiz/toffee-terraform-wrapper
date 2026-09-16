@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "toffee"
-version = "0.2.0"
-description = "A modern CLI tool for deploying Terraform across multiple environments"
+version = "0.3.0"
+description = "A lightweight environment-first Terraform wrapper"
 authors = [
     {name = "Akhilesh Mishra", email = "akhileshmishrabiz@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "typer>=0.7.0",
+    "click>=8.1.0",
     "rich>=12.0.0"
 ]
 
@@ -25,3 +25,6 @@ dev = [
 
 [project.scripts]
 toffee = "toffee.cli:app"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

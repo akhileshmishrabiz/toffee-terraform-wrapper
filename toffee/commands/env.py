@@ -51,7 +51,7 @@ class EnvCommands(BaseCommand):
                 f"[bold]Next steps:[/]\n\n"
                 f"1. Edit the vars file: [cyan]{env.vars_file if env else name}[/]\n"
                 f"2. Edit the backend config: [cyan]{env.backend_file if env else name}[/]\n"
-                f"3. Initialize Terraform: [cyan]toffee init {name}[/]",
+                f"3. Initialize Terraform: [cyan]toffee {name} init[/]",
                 title="Environment Setup",
                 border_style="green",
             )

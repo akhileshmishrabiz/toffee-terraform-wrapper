@@ -3,12 +3,16 @@
 set -euo pipefail
 
 LOG_FILE="${MOCK_TF_LOG:-/dev/null}"
-printf '%s\n' "$*" >> "$LOG_FILE"
+printf 'TF_DATA_DIR=%s %s\n' "${TF_DATA_DIR:-}" "$*" >> "$LOG_FILE"
 
 if [[ "${1:-}" == "-version" ]]; then
   echo "Terraform v1.5.7"
   echo "on darwin_amd64"
   exit 0
+fi
+
+if [[ "${1:-}" == "output" && "$*" == *"-json"* ]]; then
+  printf '{"environment":"mock"}\n'
 fi
 
 case "${1:-}" in

@@ -4,6 +4,7 @@ Base command handler for the Toffee CLI tool
 
 import logging
 import os
+import shlex
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
 
@@ -12,11 +13,12 @@ from rich.table import Table
 
 from ..core.config import Config
 from ..core.environment import EnvironmentManager
-from ..core.executor import run_terraform_command
+from ..core.executor import run_captured, run_streamed
 from ..core.terraform import TerraformRunner
 
 console = Console()
 error_console = Console(stderr=True)
+status_console = Console(stderr=True)
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +26,7 @@ class BaseCommand:
     """Base class for all Toffee commands"""
 
     def __init__(self):
+        self.project_dir = os.path.abspath(os.getcwd())
         self.config = Config()
         self.project_config = self.config.get_project_config()
         self._setup_logging()
@@ -38,40 +41,15 @@ class BaseCommand:
         if self.project_config.get("verbose", False):
             logging.basicConfig(level=logging.DEBUG, force=True)
 
-    def resolve_environments(
-        self,
-        env_names: Optional[List[str]],
-        all_envs: bool = False,
-    ) -> List[str]:
-        """Resolve which environments to target for a command."""
-        if all_envs:
-            return self.env_manager.get_environment_names()
-
-        if env_names:
-            return env_names
-
-        default_env = self.project_config.get("default_environment")
-        if default_env:
-            return [default_env]
-
-        return []
-
     def validate_environment(
         self,
         env_name: str,
-        command_name: Optional[str] = None,
     ) -> bool:
-        """Validate that an environment exists and has required files."""
-        command = self.terraform.get_command(command_name) if command_name else None
-        require_vars = bool(command and command.needs_vars_file)
-        require_backend = bool(
-            command and command.needs_backend_config and command_name == "init"
-        )
-
+        """Validate that a target is a complete, isolated environment."""
         valid, error_msg = self.env_manager.validate_environment(
             env_name,
-            require_vars=require_vars,
-            require_backend=require_backend,
+            require_vars=True,
+            require_backend=True,
         )
 
         if not valid:
@@ -117,42 +95,36 @@ class BaseCommand:
 
         console.print(table)
 
-    def display_terraform_commands(self) -> None:
-        """Display a list of available Terraform commands"""
-        table = Table(title="Available Terraform Commands")
-        table.add_column("Command", style="cyan")
-        table.add_column("Description", style="green")
-
-        for name in self.terraform.get_command_names():
-            cmd = self.terraform.get_command(name)
-            table.add_row(name, cmd.description)
-
-        console.print(table)
-
     def execute_terraform_command(
         self,
         env_name: Optional[str],
         command_name: str,
         extra_args: Optional[List[str]] = None,
+        global_args: Optional[List[str]] = None,
     ) -> int:
         """Execute a Terraform command, optionally scoped to an environment."""
         extra_args = extra_args or []
         env = None
 
         if env_name:
-            if not self.validate_environment(env_name, command_name):
+            if not self.validate_environment(env_name):
                 return 1
             env = self.env_manager.get_environment(env_name)
 
-        cmd = self.terraform.build_command(command_name, env, extra_args)
-        console.print(f"Running: {' '.join(cmd)}")
+        cmd = self.terraform.build_command(
+            command_name, env, extra_args, global_args
+        )
+        status_console.print(f"Running: {shlex.join(cmd)}")
 
         try:
-            return_code = run_terraform_command(cmd)
+            process_env = self._environment_variables(env_name) if env_name else None
+            return_code = run_streamed(cmd, process_env)
             if return_code == 0:
-                console.print("Command succeeded")
+                status_console.print("Command succeeded")
             else:
-                console.print(f"Command failed with exit code {return_code}")
+                status_console.print(
+                    f"Command failed with exit code {return_code}"
+                )
             return return_code
         except OSError as e:
             error_console.print(f"Error executing command: {e}")
@@ -164,14 +136,15 @@ class BaseCommand:
         command_name: str,
         extra_args: Optional[List[str]] = None,
         parallel: bool = False,
+        global_args: Optional[List[str]] = None,
     ) -> int:
         """Execute a Terraform command across one or more environments."""
         extra_args = extra_args or []
 
         if not env_names:
             error_console.print(
-                "Error: No environment specified. Pass environment name(s), "
-                "use --all, or set default_environment in config."
+                "Error: No environment specified. Run "
+                "'toffee <env>[,<env>...] <terraform-command>'."
             )
             return 1
 
@@ -180,68 +153,101 @@ class BaseCommand:
             if not valid_name:
                 error_console.print(f"Error: {name_error}")
                 return 1
+            if not self.validate_environment(env_name):
+                return 1
+
+        if parallel and command_name == "init":
+            status_console.print(
+                "[yellow]Terraform init is serialized because environments share "
+                ".terraform.lock.hcl; backend metadata remains isolated.[/]"
+            )
+            parallel = False
 
         if len(env_names) == 1 and not parallel:
             return self.execute_terraform_command(
-                env_names[0], command_name, extra_args
+                env_names[0], command_name, extra_args, global_args
             )
 
-        console.print(
+        status_console.print(
             f"Running [bold]{command_name}[/] for environments: "
             f"{', '.join(env_names)}"
         )
 
         if parallel:
-            return self._execute_parallel(env_names, command_name, extra_args)
+            return self._execute_parallel(
+                env_names, command_name, extra_args, global_args
+            )
 
-        exit_code = 0
         for env_name in env_names:
-            console.print(f"\n[bold]Environment:[/] {env_name}")
-            code = self.execute_terraform_command(env_name, command_name, extra_args)
+            status_console.print(f"\n[bold]Environment:[/] {env_name}")
+            code = self.execute_terraform_command(
+                env_name, command_name, extra_args, global_args
+            )
             if code != 0:
-                exit_code = code
-        return exit_code
+                return code
+        return 0
 
     def _execute_parallel(
         self,
         env_names: List[str],
         command_name: str,
         extra_args: List[str],
+        global_args: Optional[List[str]],
     ) -> int:
-        exit_code = 0
-        with ThreadPoolExecutor(max_workers=len(env_names)) as executor:
+        results = {}
+        with ThreadPoolExecutor(max_workers=min(len(env_names), 8)) as executor:
             futures = {
                 executor.submit(
-                    self._execute_quiet, env_name, command_name, extra_args
+                    self._execute_captured,
+                    env_name,
+                    command_name,
+                    extra_args,
+                    global_args,
                 ): env_name
                 for env_name in env_names
             }
             for future in as_completed(futures):
                 env_name = futures[future]
                 try:
-                    code = future.result()
-                except Exception as e:
-                    error_console.print(f"Error in {env_name}: {e}")
-                    code = 1
-                if code != 0:
-                    exit_code = code
-                    console.print(
-                        f"[red]{env_name} failed with exit code {code}[/]"
-                    )
-                else:
-                    console.print(f"[green]{env_name} succeeded[/]")
+                    results[env_name] = future.result()
+                except OSError as e:
+                    results[env_name] = (1, f"Error executing command: {e}")
+
+        exit_code = 0
+        for env_name in env_names:
+            code, output = results[env_name]
+            status_console.rule(f"[bold]{env_name}[/]")
+            if output:
+                console.print(output.rstrip(), markup=False, highlight=False)
+            if code == 0:
+                status_console.print(f"[green]{env_name} succeeded[/]")
+            else:
+                status_console.print(
+                    f"[red]{env_name} failed with exit code {code}[/]"
+                )
+                exit_code = code
         return exit_code
 
-    def _execute_quiet(
+    def _execute_captured(
         self,
         env_name: str,
         command_name: str,
         extra_args: List[str],
-    ) -> int:
-        if not self.validate_environment(env_name, command_name):
-            return 1
-
+        global_args: Optional[List[str]],
+    ) -> tuple:
         env = self.env_manager.get_environment(env_name)
-        cmd = self.terraform.build_command(command_name, env, extra_args)
+        cmd = self.terraform.build_command(
+            command_name, env, extra_args, global_args
+        )
         logger.debug("Running in parallel: %s", " ".join(cmd))
-        return run_terraform_command(cmd)
+        return run_captured(cmd, self._environment_variables(env_name))
+
+    def _environment_variables(self, env_name: str) -> dict:
+        """Return a subprocess environment with isolated Terraform metadata."""
+        data_dir = os.path.join(
+            self.project_dir, ".toffee", "terraform-data", env_name
+        )
+        os.makedirs(data_dir, exist_ok=True)
+        process_env = os.environ.copy()
+        process_env["TF_DATA_DIR"] = data_dir
+        return process_env

@@ -2,32 +2,27 @@
 Main CLI entrypoint for the Toffee CLI tool
 """
 
-from typing import List, Optional
-
-import typer
+import click
 from rich.console import Console
 
-from .cli_helpers import normalize_envs_and_args
+from . import __version__
 from .commands.config import ConfigCommands
 from .commands.env import EnvCommands
 from .commands.info import InfoCommands
 from .commands.terraform import TerraformCommands
 
-TYper_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
+PASSTHROUGH_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
 
-app = typer.Typer(
-    name="toffee",
-    help="A thin wrapper for Terraform multi-environment workflows",
-    add_completion=False,
-)
 
-info_app = typer.Typer(help="Information commands")
-config_app = typer.Typer(help="Configuration commands")
-env_app = typer.Typer(help="Environment management commands")
+class EnvironmentFirstGroup(click.Group):
+    """Treat every non-Toffee command name as an environment target."""
 
-app.add_typer(info_app, name="info")
-app.add_typer(config_app, name="config")
-app.add_typer(env_app, name="env")
+    def get_command(self, ctx: click.Context, cmd_name: str):
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+        return _environment_target_command(cmd_name)
+
 
 console = Console()
 error_console = Console(stderr=True)
@@ -49,277 +44,165 @@ def get_env_commands() -> EnvCommands:
     return EnvCommands()
 
 
-def terraform_extra_args(ctx: typer.Context) -> List[str]:
-    return list(ctx.args)
+def _environment_target_command(target_spec: str) -> click.Command:
+    """Create a passthrough command for an environment target expression."""
 
-
-def run_terraform_command(
-    ctx: typer.Context,
-    handler,
-    envs: Optional[List[str]],
-    all_envs: bool,
-    parallel: bool,
-):
-    extra_args = terraform_extra_args(ctx)
-    envs, extra_args = normalize_envs_and_args(envs, extra_args)
-    return handler(envs or [], extra_args, all_envs, parallel)
-
-
-@app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
-    version: bool = typer.Option(
-        False, "--version", "-v", help="Show version and exit"
-    ),
-):
-    """Toffee - Terraform wrapper for multi-environment deployments."""
-    if version:
-        from . import __version__
-
-        console.print(f"Toffee version {__version__}")
-        raise typer.Exit(0)
-
-    if ctx.invoked_subcommand is None:
-        console.print(ctx.get_help())
-        raise typer.Exit(0)
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def init(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Initialize Terraform for one or more environments."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.init, envs, all_envs, parallel)
+    @click.command(name=target_spec, context_settings=PASSTHROUGH_CONTEXT)
+    @click.argument("terraform_command")
+    @click.argument("terraform_args", nargs=-1, type=click.UNPROCESSED)
+    @click.option(
+        "--parallel",
+        is_flag=True,
+        help="Run the Terraform command concurrently for all target environments.",
     )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def plan(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Create a Terraform execution plan."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.plan, envs, all_envs, parallel)
-    )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def apply(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Apply Terraform changes."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.apply, envs, all_envs, parallel)
-    )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def destroy(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Destroy Terraform resources."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.destroy, envs, all_envs, parallel)
-    )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def output(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Show Terraform outputs."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.output, envs, all_envs, parallel)
-    )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def refresh(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Refresh Terraform state."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.refresh, envs, all_envs, parallel)
-    )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def fmt(
-    ctx: typer.Context,
-    env: Optional[str] = typer.Argument(None, help="Environment name (optional)"),
-):
-    """Format Terraform configuration files."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(code=cmd.fmt(env, terraform_extra_args(ctx)))
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def validate(
-    ctx: typer.Context,
-    envs: Optional[List[str]] = typer.Argument(
-        None, help="Environment name(s, optional)"
-    ),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Validate Terraform configuration files."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(ctx, cmd.validate, envs, all_envs, parallel)
-    )
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def state(
-    ctx: typer.Context,
-    env: Optional[str] = typer.Argument(
-        None, help="Environment name or state subcommand"
-    ),
-):
-    """Run Terraform state management commands."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(code=cmd.state(env, terraform_extra_args(ctx)))
-
-
-@app.command(context_settings=TYper_CONTEXT)
-def run(
-    ctx: typer.Context,
-    env: str = typer.Argument(..., help="Environment name"),
-    command: str = typer.Argument(..., help="Terraform command to run"),
-    all_envs: bool = typer.Option(False, "--all", help="Run for all environments"),
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run environments in parallel"
-    ),
-):
-    """Run any Terraform command for one or more environments."""
-    cmd = get_terraform_commands()
-    raise typer.Exit(
-        code=run_terraform_command(
-            ctx,
-            lambda envs, extra_args, use_all, use_parallel: cmd.run_command(
-                envs, command, extra_args, use_all, use_parallel
-            ),
-            [env],
-            all_envs,
-            parallel,
+    def target_command(
+        terraform_command: str,
+        terraform_args: tuple,
+        parallel: bool,
+    ) -> None:
+        env_names = list(
+            dict.fromkeys(name.strip() for name in target_spec.split(","))
         )
-    )
+        if any(not name for name in env_names):
+            raise click.UsageError(
+                "Environment targets must be comma-separated names, for example: "
+                "toffee dev,prod plan"
+            )
+
+        raw_argv = [terraform_command, *terraform_args]
+        command_index = next(
+            (index for index, arg in enumerate(raw_argv) if not arg.startswith("-")),
+            0,
+        )
+        global_args = raw_argv[:command_index]
+        command = raw_argv[command_index]
+        command_args = raw_argv[command_index + 1 :]
+
+        code = get_terraform_commands().run_command(
+            env_names,
+            command,
+            command_args,
+            parallel=parallel,
+            global_args=global_args,
+        )
+        raise click.exceptions.Exit(code)
+
+    return target_command
+
+
+@click.group(
+    cls=EnvironmentFirstGroup,
+    invoke_without_command=True,
+    help=(
+        "Environment-first Terraform wrapper.\n\n"
+        "Run: toffee <env>[,<env>...] <terraform-command> [args]"
+    ),
+)
+@click.version_option(
+    __version__,
+    "--version",
+    "-v",
+    prog_name="Toffee",
+    message="Toffee version %(version)s",
+)
+@click.pass_context
+def app(ctx: click.Context) -> None:
+    """Route internal commands or pass an environment-scoped command through."""
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+@app.group("info")
+def info_app() -> None:
+    """Information commands."""
+
+
+@app.group("config")
+def config_app() -> None:
+    """Configuration commands."""
+
+
+@app.group("env")
+def env_app() -> None:
+    """Environment management commands."""
 
 
 @info_app.command("envs")
-def list_environments():
+def list_environments() -> None:
     """List all available environments."""
-    raise typer.Exit(code=get_info_commands().list_environments())
+    raise click.exceptions.Exit(get_info_commands().list_environments())
 
 
 @info_app.command("commands")
-def list_commands():
-    """List supported Terraform command metadata."""
-    raise typer.Exit(code=get_info_commands().list_commands())
+def list_commands() -> None:
+    """List commands reported by the installed Terraform binary."""
+    raise click.exceptions.Exit(get_info_commands().list_commands())
 
 
 @info_app.command("env")
-def show_env_info(env: str = typer.Argument(..., help="Environment name")):
+@click.argument("env")
+def show_env_info(env: str) -> None:
     """Show detailed information about an environment."""
-    raise typer.Exit(code=get_info_commands().show_env_info(env))
+    raise click.exceptions.Exit(get_info_commands().show_env_info(env))
 
 
 @info_app.command("version")
-def show_version():
+def show_version() -> None:
     """Show Toffee and Terraform versions."""
-    raise typer.Exit(code=get_info_commands().show_version())
+    raise click.exceptions.Exit(get_info_commands().show_version())
 
 
 @config_app.command("show")
-def show_config():
+def show_config() -> None:
     """Show the current configuration."""
-    raise typer.Exit(code=get_config_commands().show_config())
+    raise click.exceptions.Exit(get_config_commands().show_config())
 
 
 @config_app.command("set")
+@click.argument("key")
+@click.argument("value")
+@click.option(
+    "--project",
+    is_flag=True,
+    help="Write to project .toffee.json instead of global config.",
+)
 def set_config(
-    key: str = typer.Argument(..., help="Configuration key"),
-    value: str = typer.Argument(..., help="Configuration value"),
-    project: bool = typer.Option(
-        False, "--project", help="Write to project .toffee.json instead of global config"
-    ),
-):
+    key: str,
+    value: str,
+    project: bool,
+) -> None:
     """Set a configuration value."""
-    raise typer.Exit(code=get_config_commands().set_config(key, value, project))
+    raise click.exceptions.Exit(
+        get_config_commands().set_config(key, value, project)
+    )
 
 
 @config_app.command("init")
-def init_project_config():
+def init_project_config() -> None:
     """Initialize a project configuration file."""
-    raise typer.Exit(code=get_config_commands().init_project_config())
+    raise click.exceptions.Exit(get_config_commands().init_project_config())
 
 
 @env_app.command("create")
+@click.argument("name")
 def create_environment(
-    name: str = typer.Argument(..., help="Name of the environment to create"),
-):
+    name: str,
+) -> None:
     """Create a new environment with template files."""
-    raise typer.Exit(code=get_env_commands().create_environment(name))
+    raise click.exceptions.Exit(get_env_commands().create_environment(name))
 
 
 @env_app.command("copy")
+@click.argument("source")
+@click.argument("target")
 def copy_environment(
-    source: str = typer.Argument(..., help="Source environment name"),
-    target: str = typer.Argument(..., help="Target environment name"),
-):
+    source: str,
+    target: str,
+) -> None:
     """Copy an existing environment to a new one."""
-    raise typer.Exit(code=get_env_commands().copy_environment(source, target))
+    raise click.exceptions.Exit(
+        get_env_commands().copy_environment(source, target)
+    )
 
 
 if __name__ == "__main__":
