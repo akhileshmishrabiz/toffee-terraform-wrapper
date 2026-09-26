@@ -2,12 +2,15 @@
 Environment management for the Toffee CLI tool
 """
 
-import os
 import glob
+import os
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+ENV_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+RESERVED_ENV_NAMES = frozenset({"config", "env", "info"})
 
 
 @dataclass
@@ -23,70 +26,75 @@ class Environment:
         """Check if the environment has valid files"""
         return os.path.isfile(self.vars_file) and os.path.isfile(self.backend_file)
 
-    @property
-    def is_partially_valid(self) -> bool:
-        """Check if at least the vars file exists"""
-        return os.path.isfile(self.vars_file)
-
-    def get_missing_files(self) -> List[str]:
-        """Get a list of missing files"""
-        missing = []
-        if not os.path.isfile(self.vars_file):
-            missing.append(self.vars_file)
-        if not os.path.isfile(self.backend_file):
-            missing.append(self.backend_file)
-        return missing
-
-
 class EnvironmentManager:
     """Manages discovery and validation of Terraform environments"""
 
     def __init__(self, vars_dir: str = "vars"):
-        self.vars_dir = vars_dir
+        self.vars_dir = os.path.abspath(vars_dir)
         self._environments: Dict[str, Environment] = {}
-        self._create_vars_dir_if_needed()
-        self._discover_environments()
+        self.refresh_environments()
 
-    def _create_vars_dir_if_needed(self) -> None:
-        """Create vars directory if it doesn't exist"""
-        if not os.path.isdir(self.vars_dir):
-            try:
-                os.makedirs(self.vars_dir, exist_ok=True)
-            except Exception:
-                # If we can't create it, just continue
-                pass
+    def refresh_environments(self) -> None:
+        """Discover available environments from the vars directory"""
+        self._environments.clear()
+        self._discover_environments()
 
     def _discover_environments(self) -> None:
         """Discover available environments from the vars directory"""
         if not os.path.isdir(self.vars_dir):
             return
 
-        # Find all .tfvars files
+        vars_dir_real = os.path.realpath(self.vars_dir)
+
         tfvars_files = glob.glob(os.path.join(self.vars_dir, "*.tfvars"))
-
         for vars_file in tfvars_files:
-            # Extract environment name from filename (remove path and extension)
             env_name = Path(vars_file).stem
+            if not self._is_safe_env_path(env_name, vars_dir_real):
+                continue
 
-            # Corresponding backend file
             backend_file = os.path.join(self.vars_dir, f"{env_name}.tfbackend")
-
-            # Create environment object
             self._environments[env_name] = Environment(
                 name=env_name, vars_file=vars_file, backend_file=backend_file
             )
 
-        # Also check for backend files without corresponding vars files
         backend_files = glob.glob(os.path.join(self.vars_dir, "*.tfbackend"))
-
         for backend_file in backend_files:
             env_name = Path(backend_file).stem
+            if not self._is_safe_env_path(env_name, vars_dir_real):
+                continue
+
             if env_name not in self._environments:
-                # Create environment with a vars file that may not exist
                 vars_file = os.path.join(self.vars_dir, f"{env_name}.tfvars")
                 self._environments[env_name] = Environment(
                     name=env_name, vars_file=vars_file, backend_file=backend_file
                 )
+
+    def _is_safe_env_path(self, env_name: str, vars_dir_real: str) -> bool:
+        """Ensure resolved env file paths stay directly inside vars_dir."""
+        for suffix in (".tfvars", ".tfbackend"):
+            candidate = os.path.realpath(
+                os.path.join(self.vars_dir, f"{env_name}{suffix}")
+            )
+            if os.path.dirname(candidate) != vars_dir_real:
+                return False
+        return True
+
+    @staticmethod
+    def validate_env_name(name: str) -> Tuple[bool, Optional[str]]:
+        """Validate an environment name before creating or using it."""
+        if not name:
+            return False, "Environment name cannot be empty"
+        if not ENV_NAME_PATTERN.match(name):
+            return (
+                False,
+                "Environment name must start with a letter or digit and contain "
+                "only letters, digits, underscores, and hyphens",
+            )
+        if name in RESERVED_ENV_NAMES:
+            return False, f"Environment name '{name}' is reserved by Toffee"
+        if ".." in name or "/" in name or "\\" in name:
+            return False, f"Invalid environment name: '{name}'"
+        return True, None
 
     def get_environment(self, name: str) -> Optional[Environment]:
         """Get an environment by name"""
@@ -94,42 +102,45 @@ class EnvironmentManager:
 
     def get_environment_names(self) -> List[str]:
         """Get a list of all available environment names"""
-        return sorted(list(self._environments.keys()))
+        return sorted(self._environments.keys())
 
-    def validate_environment(self, name: str) -> Tuple[bool, Optional[str]]:
+    def validate_environment(
+        self,
+        name: str,
+        require_vars: bool = False,
+        require_backend: bool = False,
+    ) -> Tuple[bool, Optional[str]]:
         """
-        Validate that an environment exists and has all required files
+        Validate that an environment exists and optionally has required files.
 
         Returns:
             tuple: (is_valid, error_message)
         """
-        # Check if the environment exists
+        valid_name, name_error = self.validate_env_name(name)
+        if not valid_name:
+            return False, name_error
+
         env = self.get_environment(name)
         if not env:
-            # Create the environment on the fly for commands that might not need vars files
-            vars_file = os.path.join(self.vars_dir, f"{name}.tfvars")
-            backend_file = os.path.join(self.vars_dir, f"{name}.tfbackend")
-
-            # Check if either file exists
-            if os.path.isfile(vars_file) or os.path.isfile(backend_file):
-                self._environments[name] = Environment(
-                    name=name, vars_file=vars_file, backend_file=backend_file
+            available_envs = self.get_environment_names()
+            if available_envs:
+                return (
+                    False,
+                    f"Environment '{name}' not found. Available environments: "
+                    f"{', '.join(available_envs)}",
                 )
-                env = self._environments[name]
-            else:
-                available_envs = self.get_environment_names()
-                if available_envs:
-                    return (
-                        False,
-                        f"Environment '{name}' not found. Available environments: {', '.join(available_envs)}",
-                    )
-                else:
-                    return (
-                        False,
-                        f"Environment '{name}' not found. No environments available in {self.vars_dir}/",
-                    )
+            return (
+                False,
+                f"Environment '{name}' not found. No environments available in "
+                f"{self.vars_dir}/",
+            )
 
-        # For fmt and certain commands, we don't need to validate files
+        if require_vars and not os.path.isfile(env.vars_file):
+            return False, f"Missing vars file for '{name}': {env.vars_file}"
+
+        if require_backend and not os.path.isfile(env.backend_file):
+            return False, f"Missing backend file for '{name}': {env.backend_file}"
+
         return True, None
 
     def suggest_environment(self, name: str) -> Optional[str]:
@@ -137,21 +148,16 @@ class EnvironmentManager:
         if not self._environments:
             return None
 
-        # Get the available environment names
         available = self.get_environment_names()
 
-        # Exact prefix match
         for env in available:
             if env.startswith(name):
                 return env
 
-        # Contains match
         for env in available:
             if name in env:
                 return env
 
-        # Try Levenshtein distance for better suggestions
-        # Simple implementation - could be replaced with a proper library
         best_match = None
         best_score = float("inf")
 
@@ -161,12 +167,10 @@ class EnvironmentManager:
                 best_score = distance
                 best_match = env
 
-        # Only suggest if reasonably close
-        if best_score <= len(name) / 2:
+        if best_match and best_score <= max(2, len(name) // 2):
             return best_match
 
-        # Return the first available as fallback if nothing matches
-        return available[0] if available else None
+        return None
 
     def _levenshtein_distance(self, s1: str, s2: str) -> int:
         """Simple Levenshtein distance implementation"""
@@ -188,28 +192,31 @@ class EnvironmentManager:
 
         return previous_row[-1]
 
-    def create_environment_template(self, name: str) -> bool:
+    def create_environment_template(self, name: str) -> Tuple[bool, Optional[str]]:
         """
-        Create template files for a new environment
-
-        Args:
-            name: Name for the new environment
+        Create template files for a new environment.
 
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, error_message)
         """
-        try:
-            # Make sure the vars directory exists
-            os.makedirs(self.vars_dir, exist_ok=True)
+        valid_name, name_error = self.validate_env_name(name)
+        if not valid_name:
+            return False, name_error
 
-            # Create vars file
+        try:
+            os.makedirs(self.vars_dir, exist_ok=True)
+            vars_dir_real = os.path.realpath(self.vars_dir)
+
             vars_file = os.path.join(self.vars_dir, f"{name}.tfvars")
+            backend_file = os.path.join(self.vars_dir, f"{name}.tfbackend")
+
+            if not self._is_safe_env_path(name, vars_dir_real):
+                return False, f"Invalid environment name: '{name}'"
+
             if not os.path.exists(vars_file):
                 with open(vars_file, "w") as f:
                     f.write(f"# Terraform variables for {name} environment\n\n")
 
-            # Create backend file
-            backend_file = os.path.join(self.vars_dir, f"{name}.tfbackend")
             if not os.path.exists(backend_file):
                 with open(backend_file, "w") as f:
                     f.write(f"# Backend configuration for {name} environment\n\n")
@@ -218,12 +225,10 @@ class EnvironmentManager:
                     f.write('region = "us-east-1"\n')
                     f.write("encrypt = true\n")
 
-            # Add the environment to our collection
             self._environments[name] = Environment(
                 name=name, vars_file=vars_file, backend_file=backend_file
             )
 
-            return True
-        except Exception as e:
-            print(f"Error creating environment: {e}")
-            return False
+            return True, None
+        except OSError as e:
+            return False, str(e)

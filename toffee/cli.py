@@ -2,314 +2,207 @@
 Main CLI entrypoint for the Toffee CLI tool
 """
 
-import typer
-from typing import List, Optional
+import click
 from rich.console import Console
 
-from .commands.terraform import TerraformCommands
-from .commands.info import InfoCommands
+from . import __version__
 from .commands.config import ConfigCommands
-from .commands.env import EnvCommands  # Import EnvCommands
+from .commands.env import EnvCommands
+from .commands.info import InfoCommands
+from .commands.terraform import TerraformCommands
 
-app = typer.Typer(
-    name="toffee",
-    help="A modern CLI tool for deploying Terraform across multiple environments",
-    add_completion=False,
-)
+PASSTHROUGH_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
 
-info_app = typer.Typer(help="Information commands")
-config_app = typer.Typer(help="Configuration commands")
-env_app = typer.Typer(help="Environment management commands")  # Create env subcommand
 
-app.add_typer(info_app, name="info")
-app.add_typer(config_app, name="config")
-app.add_typer(env_app, name="env")  # Add env subcommand to main app
+class EnvironmentFirstGroup(click.Group):
+    """Treat every non-Toffee command name as an environment target."""
+
+    def get_command(self, ctx: click.Context, cmd_name: str):
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+        return _environment_target_command(cmd_name)
+
 
 console = Console()
 error_console = Console(stderr=True)
 
 
 def get_terraform_commands() -> TerraformCommands:
-    """Get the Terraform commands handler"""
     return TerraformCommands()
 
 
 def get_info_commands() -> InfoCommands:
-    """Get the information commands handler"""
     return InfoCommands()
 
 
 def get_config_commands() -> ConfigCommands:
-    """Get the configuration commands handler"""
     return ConfigCommands()
 
 
 def get_env_commands() -> EnvCommands:
-    """Get the environment commands handler"""
     return EnvCommands()
 
 
-@app.callback(invoke_without_command=True)  # This is key to make --version work alone
-def main(
-    ctx: typer.Context,
-    version: bool = typer.Option(
-        False, "--version", "-v", help="Show version and exit"
+def _environment_target_command(target_spec: str) -> click.Command:
+    """Create a passthrough command for an environment target expression."""
+
+    @click.command(name=target_spec, context_settings=PASSTHROUGH_CONTEXT)
+    @click.argument("terraform_command")
+    @click.argument("terraform_args", nargs=-1, type=click.UNPROCESSED)
+    @click.option(
+        "--parallel",
+        is_flag=True,
+        help="Run the Terraform command concurrently for all target environments.",
+    )
+    def target_command(
+        terraform_command: str,
+        terraform_args: tuple,
+        parallel: bool,
+    ) -> None:
+        env_names = list(
+            dict.fromkeys(name.strip() for name in target_spec.split(","))
+        )
+        if any(not name for name in env_names):
+            raise click.UsageError(
+                "Environment targets must be comma-separated names, for example: "
+                "toffee dev,prod plan"
+            )
+
+        raw_argv = [terraform_command, *terraform_args]
+        command_index = next(
+            (index for index, arg in enumerate(raw_argv) if not arg.startswith("-")),
+            0,
+        )
+        global_args = raw_argv[:command_index]
+        command = raw_argv[command_index]
+        command_args = raw_argv[command_index + 1 :]
+
+        code = get_terraform_commands().run_command(
+            env_names,
+            command,
+            command_args,
+            parallel=parallel,
+            global_args=global_args,
+        )
+        raise click.exceptions.Exit(code)
+
+    return target_command
+
+
+@click.group(
+    cls=EnvironmentFirstGroup,
+    invoke_without_command=True,
+    help=(
+        "Environment-first Terraform wrapper.\n\n"
+        "Run: toffee <env>[,<env>...] <terraform-command> [args]"
     ),
-):
-    """
-    Toffee - A modern CLI tool for deploying Terraform across multiple environments
-    """
-    # If version flag was passed or no command was provided, show version and exit
-    if version:
-        from . import __version__
-        console.print(f"Toffee version {__version__}")
-        raise typer.Exit(0)
-        
-    # If no command was provided, show help
+)
+@click.version_option(
+    __version__,
+    "--version",
+    "-v",
+    prog_name="Toffee",
+    message="Toffee version %(version)s",
+)
+@click.pass_context
+def app(ctx: click.Context) -> None:
+    """Route internal commands or pass an environment-scoped command through."""
     if ctx.invoked_subcommand is None:
-        console.print(ctx.get_help())
-        raise typer.Exit(1)
+        click.echo(ctx.get_help())
 
 
-@app.command()
-def init(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Initialize Terraform in the specified environment"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee init [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.init(env, args)
-    raise typer.Exit(code=exit_code)
+@app.group("info")
+def info_app() -> None:
+    """Information commands."""
 
 
-@app.command()
-def plan(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Create a Terraform execution plan for the specified environment"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee plan [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.plan(env, args)
-    raise typer.Exit(code=exit_code)
+@app.group("config")
+def config_app() -> None:
+    """Configuration commands."""
 
 
-@app.command()
-def apply(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Apply Terraform changes for the specified environment"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee apply [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.apply(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def destroy(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Destroy Terraform resources for the specified environment"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee destroy [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.destroy(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def output(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Show Terraform outputs for the specified environment"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee output [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.output(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def refresh(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Refresh Terraform state for the specified environment"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee refresh [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.refresh(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def fmt(
-    env: Optional[str] = typer.Argument(None, help="Environment name (optional)"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Format Terraform configuration files"""
-    cmd = get_terraform_commands()
-    exit_code = cmd.fmt(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def validate(
-    env: str = typer.Argument(None, help="Environment name"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Validate Terraform configuration files"""
-    if not env:
-        error_console.print("Error: Environment name is required")
-        error_console.print("Usage: toffee validate [ENVIRONMENT]")
-        raise typer.Exit(code=1)
-
-    cmd = get_terraform_commands()
-    exit_code = cmd.validate(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def state(
-    env: Optional[str] = typer.Argument(None, help="Environment name (optional)"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Run state management commands"""
-    cmd = get_terraform_commands()
-    exit_code = cmd.state(env, args)
-    raise typer.Exit(code=exit_code)
-
-
-@app.command()
-def run(
-    env: str = typer.Argument(..., help="Environment name"),
-    command: str = typer.Argument(..., help="Terraform command to run"),
-    args: List[str] = typer.Argument(
-        None, help="Additional arguments to pass to Terraform"
-    ),
-):
-    """Run a custom Terraform command for the specified environment"""
-    cmd = get_terraform_commands()
-    exit_code = cmd.run_command(env, command, args)
-    raise typer.Exit(code=exit_code)
+@app.group("env")
+def env_app() -> None:
+    """Environment management commands."""
 
 
 @info_app.command("envs")
-def list_environments():
-    """List all available environments"""
-    cmd = get_info_commands()
-    exit_code = cmd.list_environments()
-    raise typer.Exit(code=exit_code)
+def list_environments() -> None:
+    """List all available environments."""
+    raise click.exceptions.Exit(get_info_commands().list_environments())
 
 
 @info_app.command("commands")
-def list_commands():
-    """List all available Terraform commands"""
-    cmd = get_info_commands()
-    exit_code = cmd.list_commands()
-    raise typer.Exit(code=exit_code)
+def list_commands() -> None:
+    """List commands reported by the installed Terraform binary."""
+    raise click.exceptions.Exit(get_info_commands().list_commands())
 
 
 @info_app.command("env")
-def show_env_info(
-    env: str = typer.Argument(..., help="Environment name"),
-):
-    """Show detailed information about an environment"""
-    cmd = get_info_commands()
-    exit_code = cmd.show_env_info(env)
-    raise typer.Exit(code=exit_code)
+@click.argument("env")
+def show_env_info(env: str) -> None:
+    """Show detailed information about an environment."""
+    raise click.exceptions.Exit(get_info_commands().show_env_info(env))
+
+
+@info_app.command("version")
+def show_version() -> None:
+    """Show Toffee and Terraform versions."""
+    raise click.exceptions.Exit(get_info_commands().show_version())
 
 
 @config_app.command("show")
-def show_config():
-    """Show the current configuration"""
-    cmd = get_config_commands()
-    exit_code = cmd.show_config()
-    raise typer.Exit(code=exit_code)
+def show_config() -> None:
+    """Show the current configuration."""
+    raise click.exceptions.Exit(get_config_commands().show_config())
 
 
 @config_app.command("set")
+@click.argument("key")
+@click.argument("value")
+@click.option(
+    "--project",
+    is_flag=True,
+    help="Write to project .toffee.json instead of global config.",
+)
 def set_config(
-    key: str = typer.Argument(..., help="Configuration key"),
-    value: str = typer.Argument(..., help="Configuration value"),
-):
-    """Set a global configuration value"""
-    cmd = get_config_commands()
-    exit_code = cmd.set_config(key, value)
-    raise typer.Exit(code=exit_code)
+    key: str,
+    value: str,
+    project: bool,
+) -> None:
+    """Set a configuration value."""
+    raise click.exceptions.Exit(
+        get_config_commands().set_config(key, value, project)
+    )
 
 
 @config_app.command("init")
-def init_project_config():
-    """Initialize a project configuration file"""
-    cmd = get_config_commands()
-    exit_code = cmd.init_project_config()
-    raise typer.Exit(code=exit_code)
+def init_project_config() -> None:
+    """Initialize a project configuration file."""
+    raise click.exceptions.Exit(get_config_commands().init_project_config())
 
 
-# Add environment commands
 @env_app.command("create")
+@click.argument("name")
 def create_environment(
-    name: str = typer.Argument(..., help="Name of the environment to create"),
-):
-    """Create a new environment with template files"""
-    cmd = get_env_commands()
-    exit_code = cmd.create_environment(name)
-    raise typer.Exit(code=exit_code)
+    name: str,
+) -> None:
+    """Create a new environment with template files."""
+    raise click.exceptions.Exit(get_env_commands().create_environment(name))
 
 
 @env_app.command("copy")
+@click.argument("source")
+@click.argument("target")
 def copy_environment(
-    source: str = typer.Argument(..., help="Source environment name"),
-    target: str = typer.Argument(..., help="Target environment name"),
-):
-    """Copy an existing environment to a new one"""
-    cmd = get_env_commands()
-    exit_code = cmd.copy_environment(source, target)
-    raise typer.Exit(code=exit_code)
+    source: str,
+    target: str,
+) -> None:
+    """Copy an existing environment to a new one."""
+    raise click.exceptions.Exit(
+        get_env_commands().copy_environment(source, target)
+    )
 
 
 if __name__ == "__main__":

@@ -2,15 +2,15 @@
 Information commands for the Toffee CLI tool
 """
 
-import os
 import subprocess
+
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich import box
 from rich.table import Table
 
-from .base import BaseCommand
 from .. import __version__
+from .base import BaseCommand
 
 console = Console()
 
@@ -25,17 +25,13 @@ class InfoCommands(BaseCommand):
         return 0
 
     def list_commands(self) -> int:
-        """List all available Terraform commands"""
-        console.print(Panel("[bold]Available Terraform Commands[/]", style="blue"))
-        self.display_terraform_commands()
-        return 0
+        """Ask the installed Terraform binary for its current command list."""
+        return self.execute_terraform_command(None, "-help")
 
     def show_version(self) -> int:
         """Show the version of Toffee and Terraform"""
-        # Get Toffee version
         toffee_version = __version__
 
-        # Try to get Terraform version
         terraform_version = "Not installed"
         try:
             result = subprocess.run(
@@ -45,15 +41,13 @@ class InfoCommands(BaseCommand):
                 check=False,
             )
             if result.returncode == 0:
-                # Extract the version line
                 for line in result.stdout.splitlines():
                     if "Terraform v" in line:
                         terraform_version = line.strip()
                         break
-        except Exception:
+        except OSError:
             pass
 
-        # Create a table
         table = Table(title="Versions")
         table.add_column("Component", style="cyan")
         table.add_column("Version", style="green")
@@ -71,7 +65,6 @@ class InfoCommands(BaseCommand):
 
         env = self.env_manager.get_environment(env_name)
 
-        # Create a panel with environment info
         console.print(
             Panel(
                 f"[bold cyan]Environment:[/] {env_name}\n\n"
@@ -83,34 +76,8 @@ class InfoCommands(BaseCommand):
             )
         )
 
-        # Try to read vars file content
-        if os.path.exists(env.vars_file):
-            try:
-                with open(env.vars_file, "r") as f:
-                    vars_content = f.read()
-                console.print(
-                    Panel(
-                        vars_content,
-                        title=f"Contents of {os.path.basename(env.vars_file)}",
-                        style="green",
-                    )
-                )
-            except Exception as e:
-                console.print(f"[yellow]Could not read vars file: {e}[/]")
-
-        # Try to read backend file content
-        if os.path.exists(env.backend_file):
-            try:
-                with open(env.backend_file, "r") as f:
-                    backend_content = f.read()
-                console.print(
-                    Panel(
-                        backend_content,
-                        title=f"Contents of {os.path.basename(env.backend_file)}",
-                        style="green",
-                    )
-                )
-            except Exception as e:
-                console.print(f"[yellow]Could not read backend file: {e}[/]")
-
+        console.print(
+            "[dim]File contents are not printed because tfvars/backend files may "
+            "contain secrets.[/]"
+        )
         return 0

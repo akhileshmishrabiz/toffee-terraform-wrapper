@@ -1,221 +1,266 @@
 # Toffee
 
-Toffee is a modern CLI tool that simplifies working with Terraform across multiple environments. It provides a clean interface for managing environment-specific configurations, reducing the complexity of Terraform commands, and streamlining your infrastructure deployment workflow.
+Toffee is a small, environment-first Terraform wrapper. It keeps Terraform
+commands unchanged while isolating backend metadata for every environment.
 
-## Why Toffee?
+```bash
+toffee dev init
+toffee dev plan
+toffee prod apply
+```
 
-Managing multiple environments (development, staging, production) in Terraform traditionally requires complex command-line parameters and careful file management. Toffee solves this by:
+No Terraform workspaces, command registry, or repeated `-var-file` and
+`-backend-config` arguments are required.
 
-- Automatically handling environment-specific variable files and backend configurations
-- Providing simple, intuitive commands for common Terraform operations
-- Managing environment configurations with dedicated commands
-- Delivering rich, colorful terminal output with helpful suggestions
-- Supporting project-specific and global configuration settings
+## Environment model
+
+Each environment is a pair of files:
+
+```text
+vars/
+├── dev.tfvars
+├── dev.tfbackend
+├── prod.tfvars
+└── prod.tfbackend
+```
+
+Toffee sets a separate `TF_DATA_DIR` for every target:
+
+```text
+.toffee/terraform-data/dev/
+.toffee/terraform-data/prod/
+```
+
+This prevents one environment's `init` from replacing another environment's
+backend metadata. Add `.toffee/` to the project `.gitignore`.
 
 ## Installation
 
-```bash
-# Install from GitHub
-pip install  git+https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
+### Prerequisites
 
-```
-```bash
-# Upgrade
-pip install --upgrade --force-reinstall git+https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
-```
-```bash
+- Python 3.8 or newer
+- Terraform available on `PATH`
 
-# Verify installation
+```bash
+terraform version
+python3 --version
+```
+
+### Recommended: install as an isolated CLI
+
+Using `pipx`:
+
+```bash
+pipx install git+https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
 toffee --version
 ```
 
-## Getting Started
-
-### Project Structure
-
-Toffee expects your project to follow this structure:
-
-```
-your-terraform-project/
-├── *.tf (Terraform files)
-└── vars/
-    ├── dev.tfvars      # Variables for dev environment
-    ├── dev.tfbackend   # Backend config for dev environment 
-    ├── prod.tfvars     # Variables for prod environment
-    ├── prod.tfbackend  # Backend config for prod environment
-    └── ... (other environments)
-```
-
-### Creating Your First Environment
+Or using `uv`:
 
 ```bash
-# Create a new environment
+uv tool install git+https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
+toffee --version
+```
+
+To upgrade later:
+
+```bash
+pipx upgrade toffee
+# or
+uv tool upgrade toffee
+```
+
+### Install from a local clone
+
+```bash
+git clone https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
+cd toffee-terraform-wrapper
+python3 -m pip install .
+toffee --version
+```
+
+## Quick start
+
+### 1. Open your Terraform project
+
+```bash
+cd path/to/your-terraform-project
+```
+
+Your root module remains normal Terraform code. Toffee does not require wrapper
+configuration files around modules.
+
+### 2. Create an environment
+
+```bash
 toffee env create dev
-
-# This will generate:
-# - vars/dev.tfvars
-# - vars/dev.tfbackend
 ```
 
-## Command Reference
+This creates:
 
-### Basic Terraform Operations
-
-```bash
-# Initialize Terraform for an environment
-toffee init dev
-
-# Create an execution plan for an environment
-toffee plan dev
-
-# Apply changes for an environment
-toffee apply dev
-
-# Apply with auto-approve (no confirmation prompt)
-toffee apply prod -auto-approve
-
-# Destroy infrastructure in an environment
-toffee destroy dev
-
-# Show Terraform outputs for an environment
-toffee output staging
-
-# Refresh Terraform state
-toffee refresh dev
-
-# Format Terraform files (works with or without environment)
-toffee fmt
-toffee fmt dev
-
-# Validate Terraform configuration
-toffee validate dev
-
-# Run state management commands
-toffee state dev list
-toffee state list  # Without environment
+```text
+vars/dev.tfvars
+vars/dev.tfbackend
 ```
 
-### Environment Management
-
-```bash
-# Create a new environment
-toffee env create staging
-
-# Copy an existing environment
-toffee env copy dev staging
-
-# List all available environments
-toffee info envs
-
-# Show details about a specific environment
-toffee info env prod
-```
-
-### Configuration Commands
-
-```bash
-# Initialize project configuration (.toffee.json)
-toffee config init
-
-# Show current configuration
-toffee config show
-
-# Set a global configuration value
-toffee config set terraform_path /usr/local/bin/terraform
-toffee config set auto_approve true
-toffee config set default_environment dev
-```
-
-### Information Commands
-
-```bash
-# List all available environments
-toffee info envs
-
-# Show details about a specific environment
-toffee info env dev
-
-# List available Terraform commands
-toffee info commands
-```
-
-### Custom Commands
-
-```bash
-# Run any Terraform command in a specific environment
-toffee run dev workspace list
-toffee run prod import aws_s3_bucket.bucket bucket-name
-```
-
-## Configuration
-
-### Project Configuration
-
-Create a `.toffee.json` file in your project root with project-specific settings:
-
-```json
-{
-  "vars_dir": "vars",
-  "terraform_path": "terraform",
-  "default_environment": "dev",
-  "auto_approve": false
-}
-```
-
-### Global Configuration
-
-Global settings are stored in `~/.toffee/config.json`:
-
-```json
-{
-  "vars_dir": "vars",
-  "terraform_path": "terraform",
-  "verbose": false,
-  "default_environment": null,
-  "auto_approve": false
-}
-```
-
-## Environment Files
-
-### Variables File (`.tfvars`)
-
-Contains Terraform variables for a specific environment:
+Edit `vars/dev.tfvars` with the environment's input variables:
 
 ```hcl
-# Example dev.tfvars
 environment = "dev"
-instance_type = "t3.micro"
-region = "us-east-1"
+region      = "us-east-1"
 ```
 
-### Backend Configuration (`.tfbackend`)
-
-Contains backend configuration for a specific environment:
+Edit `vars/dev.tfbackend` with that environment's backend:
 
 ```hcl
-# Example dev.tfbackend
-bucket = "my-terraform-state"
-key = "terraform/dev/terraform.tfstate"
-region = "us-east-1"
+bucket  = "my-terraform-state"
+key     = "my-service/dev/terraform.tfstate"
+region  = "us-east-1"
 encrypt = true
 ```
 
-## Tips and Best Practices
+Do not commit credentials to either file. Use your cloud provider's normal
+environment variables or credential chain.
 
-1. **Use Environment Creation**: Always create environments using `toffee env create` to ensure proper file structure.
+### 3. Initialize and use the environment
 
-2. **Environment Naming**: Use consistent naming conventions for environments (e.g., dev, stage, prod).
+```bash
+toffee dev init
+toffee dev validate
+toffee dev plan
+toffee dev apply
+```
 
-3. **Project Config**: Initialize a project config with `toffee config init` to customize settings per project.
+### 4. Add another isolated environment
 
-4. **Alias Common Commands**: Create shell aliases for frequently used commands:
-   ```bash
-   alias tp='toffee plan'
-   alias ta='toffee apply'
-   ```
+```bash
+toffee env copy dev prod
+```
 
-5. **Use Auto-Approve Selectively**: Configure `auto_approve` in production environments with care.
+Update `vars/prod.tfvars` and `vars/prod.tfbackend`, especially the backend
+state key, then run:
+
+```bash
+toffee prod init
+toffee prod plan
+```
+
+Dev and prod now use separate variable files, backend configurations, state,
+and local Terraform metadata.
+
+## Command usage
+
+The syntax is always:
+
+```text
+toffee <environment>[,<environment>...] <terraform-command> [terraform-args]
+```
+
+Toffee passes the Terraform command and its arguments through without needing
+to know every Terraform command.
+
+```bash
+toffee dev init
+toffee dev plan -target=aws_instance.web
+toffee prod apply -auto-approve
+toffee prod state list
+toffee prod state mv old.name new.name
+toffee prod import aws_instance.web i-123
+toffee dev providers schema -json
+toffee dev metadata functions -json
+toffee dev -compact-warnings plan
+```
+
+Unknown commands are also passed through unchanged, allowing future Terraform
+versions to work without a Toffee release.
+
+### Multiple environments
+
+Targets are explicit and comma-separated:
+
+```bash
+toffee dev,staging init
+toffee dev,staging plan --parallel
+toffee dev,staging apply -auto-approve --parallel
+```
+
+`init` is intentionally serialized even when `--parallel` is supplied.
+Environment backend metadata is separate, but Terraform still updates the
+project's shared `.terraform.lock.hcl`. Other commands can run concurrently.
+
+Parallel interactive commands are rejected. Use `-auto-approve` for parallel
+apply, or apply saved plan files.
+
+## Automatic arguments
+
+Toffee adds only:
+
+- `-backend-config=vars/<env>.tfbackend` to `init`
+- `-var-file=vars/<env>.tfvars` to Terraform commands that accept variable files
+- `TF_DATA_DIR=.toffee/terraform-data/<env>` to every Terraform subprocess
+
+All user-supplied arguments retain their relative order and form, including
+space-separated flags:
+
+```bash
+toffee dev plan -var environment=test
+```
+
+## Environment management
+
+```bash
+toffee env create dev
+toffee env copy dev staging
+toffee info envs
+toffee info env dev
+```
+
+`info env` shows file paths but does not print file contents because Terraform
+variable and backend files can contain secrets.
+
+## Configuration
+
+```bash
+toffee config init
+toffee config show
+toffee config set terraform_path tofu --project
+toffee config set auto_approve true --project
+```
+
+Project configuration lives in `.toffee.json`; global configuration lives in
+`~/.toffee/config.json`.
+
+```json
+{
+  "vars_dir": "vars",
+  "terraform_path": "terraform",
+  "auto_approve": false,
+  "verbose": false
+}
+```
+
+## Safety guarantees
+
+- Every target is validated before any Terraform process starts.
+- Sequential multi-environment execution stops on the first failure.
+- Each environment must have both its `.tfvars` and `.tfbackend` file.
+- Backend metadata is isolated per environment.
+- Destruction requires confirmation unless `-auto-approve` is supplied.
+- Interactive commands cannot run concurrently.
+- Saved plans are applied without injecting a conflicting variable file.
+- Wrapper status is written to stderr, leaving Terraform stdout usable with
+  tools such as `jq`.
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+ruff check .
+```
+
+Real Terraform integration tests verify that dev and staging create distinct
+state files after both environments have been initialized.
 
 ## License
 

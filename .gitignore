@@ -170,5 +170,8 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# Toffee's per-environment Terraform metadata
+.toffee/
+
 # PyPI configuration file
 .pypirc

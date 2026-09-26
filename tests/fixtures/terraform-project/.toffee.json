@@ -1,0 +1,5 @@
+{
+  "terraform_path": "PLACEHOLDER",
+  "vars_dir": "vars",
+  "auto_approve": false
+}

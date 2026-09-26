@@ -2,18 +2,16 @@
 Configuration management for the Toffee CLI tool
 """
 
-import os
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any
-
+from typing import Any, Dict
 
 DEFAULT_CONFIG = {
     "vars_dir": "vars",
     "terraform_path": "terraform",
     "verbose": False,
-    "default_environment": None,
     "auto_approve": False,
 }
 
@@ -42,7 +40,7 @@ class Config:
                     config = json.load(f)
                 # Merge with defaults to ensure all keys exist
                 return {**DEFAULT_CONFIG, **config}
-            except Exception as e:
+            except (OSError, json.JSONDecodeError) as e:
                 # If there's any error, fall back to defaults
                 logger.warning(f"Error loading config file: {e}")
                 return DEFAULT_CONFIG.copy()
@@ -55,7 +53,7 @@ class Config:
             with open(self.config_file, "w") as f:
                 json.dump(self.config, f, indent=2)
             return True
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error saving config file: {e}")
             return False
 
@@ -88,10 +86,9 @@ class Config:
             try:
                 with open(project_config_file, "r") as f:
                     project_config = json.load(f)
-            except Exception as e:
+            except (OSError, json.JSONDecodeError) as e:
                 # If there's any error, ignore the project config
                 logger.warning(f"Error reading project config: {e}")
-                pass
 
         # Project config overrides global config
         return {**self.config, **project_config}
