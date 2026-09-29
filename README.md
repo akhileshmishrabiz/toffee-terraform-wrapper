@@ -218,6 +218,17 @@ toffee info env dev
 `info env` shows file paths but does not print file contents because Terraform
 variable and backend files can contain secrets.
 
+### Compare environments
+
+```bash
+toffee diff dev prod
+```
+
+This compares the top-level mappings in both environments' `.tfvars` and
+`.tfbackend` files without running Terraform. Only changed settings are shown.
+Values whose names look sensitive are redacted by default; use
+`--show-sensitive` only when explicitly needed.
+
 ## Configuration
 
 ```bash
@@ -245,6 +256,10 @@ Project configuration lives in `.toffee.json`; global configuration lives in
 - Sequential multi-environment execution stops on the first failure.
 - Each environment must have both its `.tfvars` and `.tfbackend` file.
 - Backend metadata is isolated per environment.
+- Applying to or destroying `prod` or `production` requires a separate Toffee
+  confirmation.
+- Neither Terraform's `-auto-approve` nor Toffee's `auto_approve` setting
+  bypasses the production confirmation.
 - Destruction requires confirmation unless `-auto-approve` is supplied.
 - Interactive commands cannot run concurrently.
 - Saved plans are applied without injecting a conflicting variable file.
@@ -261,6 +276,9 @@ ruff check .
 
 Real Terraform integration tests verify that dev and staging create distinct
 state files after both environments have been initialized.
+
+Release history and future plans are available in the
+[changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).
 
 ## License
 

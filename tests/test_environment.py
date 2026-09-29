@@ -25,6 +25,7 @@ class TestEnvironmentManager:
             "has space",
             "env",
             "config",
+            "diff",
             "info",
         ]
         for name in invalid_names:

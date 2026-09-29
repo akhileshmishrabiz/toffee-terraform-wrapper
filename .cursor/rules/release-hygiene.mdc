@@ -1,0 +1,19 @@
+---
+description: Keep user-facing changes documented, tested, and release-ready
+alwaysApply: true
+---
+
+# Release hygiene
+
+For every user-facing feature or fix:
+
+- Update `CHANGELOG.md` under `Unreleased` with an accurate, concise entry.
+- Update `ROADMAP.md` whenever planned scope or an item's status changes.
+- Add or update tests that cover the behavior.
+- Update user documentation when usage, output, configuration, or guarantees
+  change.
+- Run the relevant tests and formatting or lint checks, and report what was
+  verified.
+
+Do not invent release history or mark roadmap work complete before it is
+implemented and verified.

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 ENV_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
-RESERVED_ENV_NAMES = frozenset({"config", "env", "info"})
+RESERVED_ENV_NAMES = frozenset({"config", "diff", "env", "info"})
 
 
 @dataclass

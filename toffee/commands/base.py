@@ -156,6 +156,9 @@ class BaseCommand:
             if not self.validate_environment(env_name):
                 return 1
 
+        if not self.confirm_execution(env_names, command_name, extra_args):
+            return 1
+
         if parallel and command_name == "init":
             status_console.print(
                 "[yellow]Terraform init is serialized because environments share "
@@ -186,6 +189,15 @@ class BaseCommand:
             if code != 0:
                 return code
         return 0
+
+    def confirm_execution(
+        self,
+        env_names: List[str],
+        command_name: str,
+        extra_args: List[str],
+    ) -> bool:
+        """Allow subclasses to confirm execution after all targets are validated."""
+        return True
 
     def _execute_parallel(
         self,
