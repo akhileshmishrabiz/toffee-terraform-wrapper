@@ -9,6 +9,7 @@ from typing import List, Tuple
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 from ..core import hcl
@@ -60,11 +61,13 @@ class EnvCommands(BaseCommand):
             console.print(f"  - {env.vars_file}", markup=False)
             console.print(f"  - {env.backend_file}", markup=False)
 
+        vars_file = escape(printable(env.vars_file)) if env else name
+        backend_file = escape(printable(env.backend_file)) if env else name
         console.print(
             Panel(
                 f"[bold]Next steps:[/]\n\n"
-                f"1. Edit the vars file: [cyan]{env.vars_file if env else name}[/]\n"
-                f"2. Edit the backend config: [cyan]{env.backend_file if env else name}[/]\n"
+                f"1. Edit the vars file: [cyan]{vars_file}[/]\n"
+                f"2. Edit the backend config: [cyan]{backend_file}[/]\n"
                 f"3. Initialize Terraform: [cyan]toffee {name} init[/]",
                 title="Environment Setup",
                 border_style="green",

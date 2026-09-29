@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `toffee <env> plan -out=FILE` in `FILE.toffee.json`.
 - Add `toffee diff --exit-code`, which exits with 1 when environments differ
   and 2 on errors.
+- Add the `TOFFEE_TERRAFORM_PATH` environment variable to choose the Terraform
+  binary, taking precedence over configuration files.
 
 ### Changed
 
@@ -35,6 +37,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `toffee <env> <command> --help` shows Terraform's help instead of Toffee's.
 - Environment file paths are passed to Terraform relative to its working
   directory (or `-chdir` directory) instead of as absolute paths.
+- Invalid configuration (a non-object file, invalid JSON, or wrongly typed
+  known settings such as `"auto_approve": "false"`) is reported as an error
+  instead of being ignored or partly applied.
+- `config set` writes only explicitly set global values, preserves other keys
+  in `.toffee.json`, and replaces files atomically.
 - `env copy` rewrites only quoted values equal to the source name and
   environment-named segments of backend `key`, `prefix`, and `path` values,
   prints each rewrite, and lists only the files it wrote.
@@ -62,6 +69,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as bidirectional overrides, before printing values.
 - The `Running:` status line hides `-var` values and inline `-backend-config`
   `key=value` values, and no longer interprets arguments as Rich markup.
+- A project `.toffee.json` can set `terraform_path` only to a bare executable
+  name on `PATH`, so a cloned repository can no longer choose which binary
+  Toffee runs. Explicit paths must come from `~/.toffee/config.json` or
+  `TOFFEE_TERRAFORM_PATH`.
+- `info envs` renders environment and file names as plain text with control
+  characters replaced, so file names cannot inject terminal markup.
 
 ### Fixed
 
@@ -93,3 +106,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The backend shown in the protected confirmation ignores commented-out
   blocks, supports `.tf.json` files and unquoted backend labels, and honors
   `-chdir`.
+- Toffee no longer crashes when `HOME` is read-only; `~/.toffee/` is created
+  only when saving global configuration.
+- `config set` reports save failures with a non-zero exit code, refuses to
+  overwrite a configuration file it could not parse, and no longer crashes on
+  values containing Rich markup.
+- Environment names with a trailing newline are rejected, and names that
+  commands reject (such as `config`, `dev.eu`, or `my env`) are no longer
+  listed.

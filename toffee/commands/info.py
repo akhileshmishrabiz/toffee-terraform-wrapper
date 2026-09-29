@@ -6,10 +6,12 @@ import subprocess
 
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from .. import __version__
+from ..core.text import printable
 from .base import BaseCommand
 
 console = Console()
@@ -68,8 +70,8 @@ class InfoCommands(BaseCommand):
         console.print(
             Panel(
                 f"[bold cyan]Environment:[/] {env_name}\n\n"
-                f"[bold]Vars File:[/] {env.vars_file}\n"
-                f"[bold]Backend File:[/] {env.backend_file}",
+                f"[bold]Vars File:[/] {escape(printable(env.vars_file))}\n"
+                f"[bold]Backend File:[/] {escape(printable(env.backend_file))}",
                 title=f"Environment: {env_name}",
                 style="blue",
                 box=box.ROUNDED,

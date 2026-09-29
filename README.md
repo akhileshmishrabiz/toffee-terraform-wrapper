@@ -339,9 +339,11 @@ toffee info env dev
 `info env` shows file paths but does not print file contents because Terraform
 variable and backend files can contain secrets.
 
-Environment names must be unique ignoring letter case, because macOS and
-Windows file systems usually treat `Prod.tfvars` and `prod.tfvars` as the same
-file.
+Environment names start with a letter or digit and contain only letters,
+digits, underscores, and hyphens; `config`, `diff`, `env`, and `info` are
+reserved. Files in `vars/` with other names are not listed as environments.
+Names must also be unique ignoring letter case, because macOS and Windows file
+systems usually treat `Prod.tfvars` and `prod.tfvars` as the same file.
 
 `env copy` rewrites only quoted values exactly equal to the source name (for
 example `environment = "dev"`) and, in the backend file, path segments or file
@@ -387,15 +389,37 @@ toffee config set auto_approve true --project
 ```
 
 Project configuration lives in `.toffee.json`; global configuration lives in
-`~/.toffee/config.json`.
+`~/.toffee/config.json`. Project values override global values, except
+`protected_environments`, where both lists are combined.
 
 ```json
 {
   "vars_dir": "vars",
   "terraform_path": "terraform",
   "auto_approve": false,
-  "verbose": false
+  "verbose": false,
+  "protected_environments": []
 }
+```
+
+Both files must contain a JSON object whose known settings have the right
+types: `auto_approve` and `verbose` must be `true` or `false` (not the string
+`"false"`), `vars_dir` and `terraform_path` non-empty strings, and
+`protected_environments` a list of names. An invalid or unreadable file is
+reported as an error and Toffee exits without running anything. `config set`
+never overwrites a file it could not parse, and it reports a failure if the
+file cannot be written. `~/.toffee/` is only created when you save global
+configuration.
+
+Because `.toffee.json` usually arrives with a cloned repository, it may set
+`terraform_path` only to a bare executable name that is looked up on `PATH`,
+such as `terraform` or `tofu`. Set an explicit path in
+`~/.toffee/config.json`, or with the `TOFFEE_TERRAFORM_PATH` environment
+variable, which takes precedence over both files:
+
+```bash
+toffee config set terraform_path /opt/terraform/1.9/terraform
+TOFFEE_TERRAFORM_PATH=/opt/terraform/1.9/terraform toffee dev plan
 ```
 
 ## Safety guarantees

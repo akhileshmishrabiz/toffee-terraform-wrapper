@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-ENV_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+ENV_NAME_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]*")
 RESERVED_ENV_NAMES = frozenset({"config", "diff", "env", "info"})
 
 
@@ -49,7 +49,7 @@ class EnvironmentManager:
         tfvars_files = glob.glob(os.path.join(self.vars_dir, "*.tfvars"))
         for vars_file in tfvars_files:
             env_name = Path(vars_file).stem
-            if not self._is_safe_env_path(env_name, vars_dir_real):
+            if not self._is_usable_name(env_name, vars_dir_real):
                 continue
 
             backend_file = os.path.join(self.vars_dir, f"{env_name}.tfbackend")
@@ -60,7 +60,7 @@ class EnvironmentManager:
         backend_files = glob.glob(os.path.join(self.vars_dir, "*.tfbackend"))
         for backend_file in backend_files:
             env_name = Path(backend_file).stem
-            if not self._is_safe_env_path(env_name, vars_dir_real):
+            if not self._is_usable_name(env_name, vars_dir_real):
                 continue
 
             if env_name not in self._environments:
@@ -68,6 +68,12 @@ class EnvironmentManager:
                 self._environments[env_name] = Environment(
                     name=env_name, vars_file=vars_file, backend_file=backend_file
                 )
+
+    def _is_usable_name(self, env_name: str, vars_dir_real: str) -> bool:
+        """Only list names that commands will accept."""
+        return self.validate_env_name(env_name)[0] and self._is_safe_env_path(
+            env_name, vars_dir_real
+        )
 
     def env_file_paths(self, name: str) -> Tuple[str, str]:
         return (
@@ -110,7 +116,7 @@ class EnvironmentManager:
         """Validate an environment name before creating or using it."""
         if not name:
             return False, "Environment name cannot be empty"
-        if not ENV_NAME_PATTERN.match(name):
+        if not ENV_NAME_PATTERN.fullmatch(name):
             return (
                 False,
                 "Environment name must start with a letter or digit and contain "

@@ -1,6 +1,5 @@
 """Execution behavior: parallel output, exit codes, signals, and argv display."""
 
-import json
 import os
 import signal
 import subprocess
@@ -228,12 +227,9 @@ class TestSignals:
         script = tmp_path / "slow-terraform"
         script.write_text(SLOW_TERRAFORM.format(python=sys.executable))
         script.chmod(0o755)
-        config_file = project / ".toffee.json"
-        config = json.loads(config_file.read_text())
-        config["terraform_path"] = str(script)
-        config_file.write_text(json.dumps(config))
         env = {
             **env,
+            "TOFFEE_TERRAFORM_PATH": str(script),
             "SLOW_TF_READY": str(tmp_path / "ready"),
             "SLOW_TF_MARKER": str(tmp_path / "marker"),
         }

@@ -9,6 +9,7 @@ from typing import List, Optional, Sequence
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from ..core.backend import (
     Backend,
@@ -30,6 +31,7 @@ from ..core.terraform import (
     display_command,
     working_directory,
 )
+from ..core.text import printable
 
 console = Console()
 error_console = Console(stderr=True, soft_wrap=True)
@@ -109,10 +111,15 @@ class BaseCommand:
             status = "ready" if vars_exists and backend_exists else "incomplete"
 
             table.add_row(
-                name,
-                os.path.basename(env.vars_file) + (" ✓" if vars_exists else " ✗"),
-                os.path.basename(env.backend_file)
-                + (" ✓" if backend_exists else " ✗"),
+                Text(printable(name)),
+                Text(
+                    printable(os.path.basename(env.vars_file))
+                    + (" ✓" if vars_exists else " ✗")
+                ),
+                Text(
+                    printable(os.path.basename(env.backend_file))
+                    + (" ✓" if backend_exists else " ✗")
+                ),
                 status,
             )
 
