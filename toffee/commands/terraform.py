@@ -6,6 +6,7 @@ from typing import List, Optional
 import click
 from rich.console import Console
 
+from ..core.safety import describe_backend, is_protected_environment
 from .base import BaseCommand
 
 console = Console()
@@ -45,19 +46,63 @@ class TerraformCommands(BaseCommand):
             )
             return 1
 
-        if command == "destroy" and "-auto-approve" not in args:
+        return self.execute_for_environments(
+            env_names, command, args, parallel, global_args
+        )
+
+    def confirm_execution(
+        self,
+        env_names: List[str],
+        command_name: str,
+        extra_args: List[str],
+    ) -> bool:
+        """Require a Toffee confirmation before changing protected targets."""
+        if command_name not in {"apply", "destroy"}:
+            return True
+
+        protected_targets = self._protected_targets(env_names)
+        if not protected_targets:
+            if command_name != "destroy" or "-auto-approve" in extra_args:
+                return True
             console.print(
                 "[bold red]WARNING:[/] This will destroy resources in: "
                 f"{', '.join(env_names)}."
             )
             if not click.confirm("Do you want to continue?"):
                 console.print("Operation aborted.")
-                return 1
-            args.append("-auto-approve")
+                return False
+            extra_args.append("-auto-approve")
+            return True
 
-        return self.execute_for_environments(
-            env_names, command, args, parallel, global_args
+        action = (
+            "destroy resources in"
+            if command_name == "destroy"
+            else "apply changes to"
         )
+        names = ", ".join(name.upper() for name in protected_targets)
+        error_console.print(
+            f"\n[bold yellow]⚠ You are about to {action} {names}.[/]"
+        )
+        for name in protected_targets:
+            env = self.env_manager.get_environment(name)
+            error_console.print(f"\nEnvironment: {name}")
+            error_console.print(
+                "Backend: ",
+                describe_backend(self.project_dir, env.backend_file),
+                sep="",
+                markup=False,
+                highlight=False,
+            )
+
+        # This is deliberately independent of Terraform's -auto-approve flag.
+        if not click.confirm("\nContinue?", default=False, err=True):
+            error_console.print("Operation aborted.")
+            return False
+        return True
+
+    @staticmethod
+    def _protected_targets(env_names: List[str]) -> List[str]:
+        return [name for name in env_names if is_protected_environment(name)]
 
     @staticmethod
     def _apply_is_non_interactive(args: List[str]) -> bool:

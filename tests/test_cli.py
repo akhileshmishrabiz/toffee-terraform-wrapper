@@ -53,6 +53,47 @@ class TestCLI:
         log = mock_terraform_log.read_text()
         assert "-auto-approve" in log
 
+    def test_prod_apply_requires_confirmation(self, invoke, mock_terraform_log):
+        result = invoke("prod", "apply", input="n\n")
+        assert result.exit_code == 1
+        assert "apply changes to PROD" in result.stderr
+        assert "Environment: prod" in result.stderr
+        assert (
+            "Backend: local://.terraform-state/prod/terraform.tfstate"
+            in result.stderr
+        )
+        assert mock_terraform_log.read_text() == ""
+
+    def test_auto_approve_does_not_bypass_prod_confirmation(
+        self, invoke, mock_terraform_log
+    ):
+        result = invoke("prod", "apply", "-auto-approve", input="n\n")
+        assert result.exit_code == 1
+        assert "Continue? [y/N]" in result.stderr
+        assert mock_terraform_log.read_text() == ""
+
+    def test_project_auto_approve_does_not_bypass_prod_confirmation(
+        self, invoke, mock_terraform_log
+    ):
+        config_result = invoke(
+            "config", "set", "auto_approve", "true", "--project"
+        )
+        assert config_result.exit_code == 0
+
+        result = invoke("prod", "apply", input="n\n")
+
+        assert result.exit_code == 1
+        assert "Continue? [y/N]" in result.stderr
+        assert mock_terraform_log.read_text() == ""
+
+    def test_confirmed_prod_apply_runs(self, invoke, mock_terraform_log):
+        result = invoke("prod", "apply", "-auto-approve", input="y\n")
+        assert result.exit_code == 0
+        log = mock_terraform_log.read_text()
+        assert "apply" in log
+        assert "-auto-approve" in log
+        assert "prod.tfvars" in log
+
     def test_state_list(self, invoke, mock_terraform_log):
         result = invoke("dev", "state", "list")
         assert result.exit_code == 0
@@ -137,6 +178,28 @@ class TestCLI:
         assert "destroy" in log
         assert "-auto-approve" in log
 
+    def test_auto_approve_does_not_bypass_prod_destroy_confirmation(
+        self, invoke, mock_terraform_log
+    ):
+        result = invoke("prod", "destroy", "-auto-approve", input="n\n")
+        assert result.exit_code == 1
+        assert "destroy resources in PROD" in result.stderr
+        assert mock_terraform_log.read_text() == ""
+
+    def test_project_auto_approve_does_not_bypass_prod_destroy_confirmation(
+        self, invoke, mock_terraform_log
+    ):
+        config_result = invoke(
+            "config", "set", "auto_approve", "true", "--project"
+        )
+        assert config_result.exit_code == 0
+
+        result = invoke("prod", "destroy", input="n\n")
+
+        assert result.exit_code == 1
+        assert "destroy resources in PROD" in result.stderr
+        assert mock_terraform_log.read_text() == ""
+
     def test_auto_approve_config_not_duplicated(self, invoke, project_dir, mock_terraform_log):
         project, _, _ = project_dir
         invoke("config", "set", "auto_approve", "true", "--project")
@@ -176,6 +239,16 @@ class TestCLI:
     ):
         result = invoke("dev,missing", "plan")
         assert result.exit_code == 1
+        assert mock_terraform_log.read_text() == ""
+
+    def test_destroy_target_is_validated_before_confirmation(
+        self, invoke, mock_terraform_log
+    ):
+        result = invoke("missing", "destroy")
+
+        assert result.exit_code == 1
+        assert "not found" in result.stderr
+        assert "Do you want to continue?" not in result.output
         assert mock_terraform_log.read_text() == ""
 
     def test_parallel_init_is_safely_serialized(self, invoke, mock_terraform_log):

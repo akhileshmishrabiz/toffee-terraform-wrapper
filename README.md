@@ -245,6 +245,10 @@ Project configuration lives in `.toffee.json`; global configuration lives in
 - Sequential multi-environment execution stops on the first failure.
 - Each environment must have both its `.tfvars` and `.tfbackend` file.
 - Backend metadata is isolated per environment.
+- Applying to or destroying `prod` or `production` requires a separate Toffee
+  confirmation.
+- Neither Terraform's `-auto-approve` nor Toffee's `auto_approve` setting
+  bypasses the production confirmation.
 - Destruction requires confirmation unless `-auto-approve` is supplied.
 - Interactive commands cannot run concurrently.
 - Saved plans are applied without injecting a conflicting variable file.
