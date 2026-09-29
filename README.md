@@ -277,6 +277,9 @@ ruff check .
 Real Terraform integration tests verify that dev and staging create distinct
 state files after both environments have been initialized.
 
+Release history and future plans are available in the
+[changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).
+
 ## License
 
 MIT
