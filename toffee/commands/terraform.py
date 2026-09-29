@@ -84,6 +84,14 @@ class TerraformCommands(BaseCommand):
                 )
                 return 1
 
+        if (
+            parallel
+            and self._destroys(command, args)
+            and not bool_flag(args, "auto-approve")
+        ):
+            error_console.print("Error: Parallel destroy requires -auto-approve.")
+            return 1
+
         if parallel and command in {"console", "login"}:
             error_console.print(
                 f"Error: Terraform {command} is interactive and cannot run in parallel."

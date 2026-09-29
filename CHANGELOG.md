@@ -29,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The protected confirmation lists every target of a multi-environment
   command, highlighting the protected ones.
 - The non-protected destroy warning and prompt are written to stderr.
+- Parallel runs close Terraform's stdin, add `-input=false` to commands that
+  accept it unless `-input` is given, and require `-auto-approve` for
+  `destroy` and `apply -destroy`.
+- `toffee <env> <command> --help` shows Terraform's help instead of Toffee's.
+- Environment file paths are passed to Terraform relative to its working
+  directory (or `-chdir` directory) instead of as absolute paths.
 - `env copy` rewrites only quoted values equal to the source name and
   environment-named segments of backend `key`, `prefix`, and `path` values,
   prints each rewrite, and lists only the files it wrote.
@@ -54,6 +60,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and URLs with embedded credentials.
 - `toffee diff` replaces C1 control and invisible formatting characters, such
   as bidirectional overrides, before printing values.
+- The `Running:` status line hides `-var` values and inline `-backend-config`
+  `key=value` values, and no longer interprets arguments as Rich markup.
 
 ### Fixed
 
@@ -70,3 +78,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `toffee diff` compares heredoc values instead of reading their bodies as
   settings, ignores `/* */` comments, and reports unterminated blocks and
   unreadable files as errors instead of silently merging or crashing.
+- Parallel commands no longer hang on invisible prompts.
+- Parallel output is written as raw bytes with stdout and stderr kept
+  separate, so JSON output is not corrupted by line wrapping, emoji
+  replacement, merged stderr, or invalid UTF-8.
+- With `-detailed-exitcode`, exit code 2 no longer stops sequential runs, and
+  a parallel failure is no longer masked by another environment's exit code 2.
+- Ctrl-C no longer makes Toffee exit while Terraform is still shutting down,
+  and `SIGTERM` is forwarded to Terraform.
+- `init` works when the project path contains a symlink, such as macOS `/tmp`.
+- A supplemental `-backend-config=key=value` no longer drops the
+  environment's backend file and `-reconfigure`.
+- Arguments such as `-var 'cidrs=[/]'` no longer crash the status line.
+- The backend shown in the protected confirmation ignores commented-out
+  blocks, supports `.tf.json` files and unquoted backend labels, and honors
+  `-chdir`.

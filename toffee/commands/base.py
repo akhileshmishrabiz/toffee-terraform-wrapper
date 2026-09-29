@@ -4,9 +4,8 @@ Base command handler for the Toffee CLI tool
 
 import logging
 import os
-import shlex
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Optional
+import sys
+from typing import List, Optional, Sequence
 
 from rich.console import Console
 from rich.table import Table
@@ -23,9 +22,14 @@ from ..core.backend import (
 )
 from ..core.config import Config
 from ..core.environment import EnvironmentManager
-from ..core.executor import run_captured, run_streamed
+from ..core.executor import run_parallel, run_streamed
 from ..core.safety import is_protected_environment
-from ..core.terraform import TerraformRunner, working_directory
+from ..core.terraform import (
+    TerraformRunner,
+    bool_flag,
+    display_command,
+    working_directory,
+)
 
 console = Console()
 error_console = Console(stderr=True, soft_wrap=True)
@@ -133,21 +137,24 @@ class BaseCommand:
         cmd = self.terraform.build_command(
             command_name, env, extra_args, global_args
         )
-        status_console.print(f"Running: {shlex.join(cmd)}")
+        status_console.print(
+            f"Running: {display_command(cmd)}", markup=False, highlight=False
+        )
 
         try:
             process_env = self._environment_variables(env_name) if env_name else None
             return_code = run_streamed(cmd, process_env)
-            if return_code == 0:
-                status_console.print("Command succeeded")
-            else:
-                status_console.print(
-                    f"Command failed with exit code {return_code}"
-                )
-            return return_code
         except OSError as e:
-            error_console.print(f"Error executing command: {e}")
+            error_console.print(
+                f"Error executing command: {e}", markup=False, highlight=False
+            )
             return 1
+        status_console.print(
+            self._result_message("Command", return_code, extra_args),
+            markup=False,
+            highlight=False,
+        )
+        return return_code
 
     def execute_for_environments(
         self,
@@ -196,8 +203,9 @@ class BaseCommand:
             )
 
         status_console.print(
-            f"Running [bold]{command_name}[/] for environments: "
-            f"{', '.join(env_names)}"
+            f"Running {command_name} for environments: {', '.join(env_names)}",
+            markup=False,
+            highlight=False,
         )
 
         if parallel:
@@ -205,14 +213,39 @@ class BaseCommand:
                 env_names, command_name, extra_args, global_args
             )
 
+        codes = []
         for env_name in env_names:
             status_console.print(f"\n[bold]Environment:[/] {env_name}")
             code = self.execute_terraform_command(
                 env_name, command_name, extra_args, global_args
             )
-            if code != 0:
+            codes.append(code)
+            if self._is_failure(code, extra_args):
                 return code
-        return 0
+        return self.combined_exit_code(codes, extra_args)
+
+    @staticmethod
+    def _is_failure(code: int, extra_args: Sequence[str]) -> bool:
+        # With -detailed-exitcode, Terraform exits 2 when changes are present.
+        return code != 0 and not (
+            code == 2 and bool_flag(extra_args, "detailed-exitcode")
+        )
+
+    @classmethod
+    def combined_exit_code(cls, codes: Sequence[int], extra_args: Sequence[str]) -> int:
+        """Report the first failure, else 2 if any target had changes, else 0."""
+        for code in codes:
+            if cls._is_failure(code, extra_args):
+                return code
+        return 2 if 2 in codes else 0
+
+    @classmethod
+    def _result_message(cls, subject: str, code: int, extra_args: Sequence[str]) -> str:
+        if code == 0:
+            return f"{subject} succeeded"
+        if not cls._is_failure(code, extra_args):
+            return f"{subject} succeeded with changes present"
+        return f"{subject} failed with exit code {code}"
 
     def prepare_execution(
         self,
@@ -331,53 +364,41 @@ class BaseCommand:
         extra_args: List[str],
         global_args: Optional[List[str]],
     ) -> int:
-        results = {}
-        with ThreadPoolExecutor(max_workers=min(len(env_names), 8)) as executor:
-            futures = {
-                executor.submit(
-                    self._execute_captured,
-                    env_name,
-                    command_name,
-                    extra_args,
-                    global_args,
-                ): env_name
-                for env_name in env_names
-            }
-            for future in as_completed(futures):
-                env_name = futures[future]
-                try:
-                    results[env_name] = future.result()
-                except OSError as e:
-                    results[env_name] = (1, f"Error executing command: {e}")
-
-        exit_code = 0
-        for env_name in env_names:
-            code, output = results[env_name]
-            status_console.rule(f"[bold]{env_name}[/]")
-            if output:
-                console.print(output.rstrip(), markup=False, highlight=False)
-            if code == 0:
-                status_console.print(f"[green]{env_name} succeeded[/]")
-            else:
-                status_console.print(
-                    f"[red]{env_name} failed with exit code {code}[/]"
-                )
-                exit_code = code
-        return exit_code
-
-    def _execute_captured(
-        self,
-        env_name: str,
-        command_name: str,
-        extra_args: List[str],
-        global_args: Optional[List[str]],
-    ) -> tuple:
-        env = self.env_manager.get_environment(env_name)
-        cmd = self.terraform.build_command(
-            command_name, env, extra_args, global_args
+        commands = [
+            self.terraform.build_command(
+                command_name,
+                self.env_manager.get_environment(env_name),
+                extra_args,
+                global_args,
+                non_interactive=True,
+            )
+            for env_name in env_names
+        ]
+        results = run_parallel(
+            [
+                (cmd, self._environment_variables(env_name))
+                for env_name, cmd in zip(env_names, commands)
+            ]
         )
-        logger.debug("Running in parallel: %s", " ".join(cmd))
-        return run_captured(cmd, self._environment_variables(env_name))
+
+        codes = []
+        for env_name, cmd, (code, stdout, stderr) in zip(env_names, commands, results):
+            status_console.rule(f"[bold]{env_name}[/]")
+            status_console.print(
+                f"Running: {display_command(cmd)}", markup=False, highlight=False
+            )
+            # Raw bytes keep machine-readable output (such as -json) intact.
+            _write_raw(sys.stdout, stdout)
+            _write_raw(sys.stderr, stderr)
+            style = "red" if self._is_failure(code, extra_args) else "green"
+            status_console.print(
+                self._result_message(env_name, code, extra_args),
+                style=style,
+                markup=False,
+                highlight=False,
+            )
+            codes.append(code)
+        return self.combined_exit_code(codes, extra_args)
 
     def terraform_data_dir(self, env_name: str) -> str:
         return os.path.join(self.project_dir, ".toffee", "terraform-data", env_name)
@@ -389,3 +410,16 @@ class BaseCommand:
         process_env = os.environ.copy()
         process_env["TF_DATA_DIR"] = data_dir
         return process_env
+
+
+def _write_raw(stream, data: bytes) -> None:
+    if not data:
+        return
+    stream.flush()
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        stream.write(data.decode(errors="replace"))
+    else:
+        buffer.write(data)
+        buffer.flush()
+    stream.flush()

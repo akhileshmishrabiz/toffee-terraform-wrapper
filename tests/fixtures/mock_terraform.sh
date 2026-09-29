@@ -16,6 +16,10 @@ if [[ "${1:-}" == "output" && "$*" == *"-json"* ]]; then
   printf '{"environment":"mock"}\n'
 fi
 
+if [[ -n "${MOCK_TF_STDOUT:-}" ]]; then
+  printf '%b' "$MOCK_TF_STDOUT"
+fi
+
 if [[ -n "${MOCK_TF_STDERR:-}" ]]; then
   printf '%s\n' "$MOCK_TF_STDERR" >&2
 fi

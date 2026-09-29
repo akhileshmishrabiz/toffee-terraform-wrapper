@@ -192,16 +192,46 @@ toffee dev,staging apply -auto-approve --parallel
 Environment backend metadata is separate, but Terraform still updates the
 project's shared `.terraform.lock.hcl`. Other commands can run concurrently.
 
-Parallel interactive commands are rejected. Use `-auto-approve` for parallel
-apply, or apply saved plan files.
+In parallel mode:
+
+- Terraform's stdin is closed, and `-input=false` is added to `plan`,
+  `apply`, `destroy`, `import`, and `refresh` unless you pass `-input`
+  yourself, so nothing waits on a prompt you cannot see.
+- `apply` requires `-auto-approve` (or a saved plan), and `destroy` or
+  `apply -destroy` requires `-auto-approve` on the command line. `console` and
+  `login` are rejected.
+- Each environment's stdout and stderr are captured separately and written
+  unchanged once it finishes, so `toffee dev,prod output -json --parallel`
+  keeps valid JSON on stdout. Environment headers and status lines go to
+  stderr.
+
+With `-detailed-exitcode`, exit code 2 means "changes present" rather than
+failure: sequential runs continue to the next environment, and the combined
+exit code is the first real failure, otherwise 2 if any environment has
+changes, otherwise 0.
+
+Ctrl-C reaches Terraform directly, and Toffee waits for it to shut down
+cleanly (and prints any captured parallel output) before exiting with
+Terraform's exit code. A `SIGTERM` sent to Toffee is forwarded to Terraform.
 
 ## Automatic arguments
 
-Toffee adds only:
+Toffee adds:
 
-- `-backend-config=vars/<env>.tfbackend` to `init`
-- `-var-file=vars/<env>.tfvars` to Terraform commands that accept variable files
-- `TF_DATA_DIR=.toffee/terraform-data/<env>` to every Terraform subprocess
+- `-backend-config=vars/<env>.tfbackend` and `-reconfigure` to `init`
+  (`-reconfigure` is skipped when you pass `-reconfigure` or
+  `-migrate-state`). Your own `-backend-config` values are appended after the
+  environment's file, so they supplement it.
+- `-var-file=vars/<env>.tfvars` to Terraform commands that accept variable
+  files, except when applying a saved plan.
+- `-auto-approve` to `apply` when the `auto_approve` setting is enabled, unless
+  you pass `-auto-approve` yourself, apply a saved plan, or use `-destroy`.
+- `-input=false` to commands that accept it in parallel mode.
+- `TF_DATA_DIR=.toffee/terraform-data/<env>` to every Terraform subprocess.
+
+Environment file paths are passed relative to Terraform's working directory
+(the `-chdir` directory when given), which keeps them valid when the project
+is reached through a symlink such as macOS `/tmp`.
 
 All user-supplied arguments retain their relative order and form, including
 space-separated flags:
@@ -209,6 +239,11 @@ space-separated flags:
 ```bash
 toffee dev plan -var environment=test
 ```
+
+`--help` and `-h` after the environment are passed to Terraform, so
+`toffee dev plan --help` shows Terraform's help for `plan`. The `Running:`
+status line on stderr hides `-var` values and inline `-backend-config`
+`key=value` values.
 
 ## Protected environments
 

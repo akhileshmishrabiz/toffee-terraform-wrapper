@@ -59,7 +59,12 @@ def get_diff_commands() -> DiffCommands:
 def _environment_target_command(target_spec: str) -> click.Command:
     """Create a passthrough command for an environment target expression."""
 
-    @click.command(name=target_spec, context_settings=PASSTHROUGH_CONTEXT)
+    # --help and -h belong to Terraform here, e.g. `toffee dev plan --help`.
+    @click.command(
+        name=target_spec,
+        context_settings=PASSTHROUGH_CONTEXT,
+        add_help_option=False,
+    )
     @click.argument("terraform_command")
     @click.argument("terraform_args", nargs=-1, type=click.UNPROCESSED)
     @click.option(
