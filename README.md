@@ -324,8 +324,23 @@ toffee diff dev prod
 
 This compares the top-level mappings in both environments' `.tfvars` and
 `.tfbackend` files without running Terraform. Only changed settings are shown.
-Values whose names look sensitive are redacted by default; use
-`--show-sensitive` only when explicitly needed.
+Comments (`#`, `//`, `/* */`) are ignored and heredoc bodies are compared as
+values. A file with an unterminated string, heredoc, comment, or block is
+reported as an error instead of being guessed at.
+
+Values are redacted by default when the setting's name looks sensitive (for
+example `password`, `db_pass`, `api_key`, `token`, `auth`, `conn_str`,
+`database_url`, `ssh_key`, `webhook_url`, or `github_pat`), when a map or list
+contains such a key at any depth, or when a URL embeds credentials. Use
+`--show-sensitive` only when explicitly needed. Control and invisible
+formatting characters are replaced before printing.
+
+`toffee diff` exits with status 0 by default. With `--exit-code` it exits with
+1 when the environments differ and 2 on errors, like `diff`:
+
+```bash
+toffee diff staging prod --exit-code || echo "staging and prod differ"
+```
 
 ## Configuration
 

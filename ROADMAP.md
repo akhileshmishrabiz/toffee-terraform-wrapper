@@ -7,7 +7,8 @@
   environments, independent of auto-approval. Verify the origin of saved plans
   and refuse environments that share state.
 - **Simple environment diff:** Compare top-level variable and backend settings
-  across environments while redacting sensitive values by default.
+  across environments while redacting sensitive values by default, with an
+  `--exit-code` option for scripts.
 
 ## Planned
 

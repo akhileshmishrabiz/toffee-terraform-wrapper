@@ -64,6 +64,82 @@ class TestCLI:
         assert result.exit_code == 1
         assert "not found" in result.stderr.lower()
 
+    def test_diff_redacts_composites_with_sensitive_nested_keys(
+        self, invoke, project_dir
+    ):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_text(
+            'db = {\n  host = "dev-db"\n  password = "dev-pw"\n}\n'
+            'db_pass = "dev-pass"\n'
+            'dsn = "postgres://u:dev-url-pw@db/app"\n'
+        )
+        (project / "vars" / "prod.tfvars").write_text(
+            'db = { host = "prod-db", password = "prod-pw" }\n'
+            'db_pass = "prod-pass"\n'
+            'url = "postgres://u:prod-url-pw@db/app"\n'
+        )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        for secret in ("dev-pw", "prod-pw", "dev-pass", "prod-pass", "url-pw"):
+            assert secret not in result.stdout
+        assert result.stdout.count("<redacted>") == 6
+
+    def test_diff_filters_control_and_bidi_characters(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_text(
+            'label = "a\x1b[2Jb\u202ec\x85d"\n'
+        )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert not any(character in result.stdout for character in "\x1b\u202e\x85")
+        assert "a\ufffd[2Jb\ufffdc\ufffdd" in result.stdout
+
+    def test_diff_detects_heredoc_differences(self, invoke, project_dir):
+        project, _, _ = project_dir
+        for env in ("dev", "prod"):
+            (project / "vars" / f"{env}.tfvars").write_text(
+                f"script = <<EOF\necho {env}\nregion = \"x\"\nEOF\n"
+            )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert "script" in result.stdout
+        assert "region" not in result.stdout.replace('region = "x"', "")
+
+    def test_diff_exit_code_option(self, invoke):
+        different = invoke("diff", "dev", "prod", "--exit-code")
+        same = invoke("diff", "dev", "dev", "--exit-code")
+        missing = invoke("diff", "dev", "missing", "--exit-code")
+
+        assert different.exit_code == 1
+        assert same.exit_code == 0
+        assert missing.exit_code == 2
+
+    def test_diff_reports_unreadable_files_cleanly(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_bytes(b"region = \"\xff\xfe\"\n")
+        (project / "vars" / "prod.tfvars").write_text("tags = {\n")
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 1
+        assert "Cannot read vars/dev.tfvars" in result.stderr
+        assert "Traceback" not in result.output
+
+    def test_diff_reports_unterminated_block(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "prod.tfvars").write_text('tags = {\n  a = "b"\n')
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 1
+        assert "unterminated value for 'tags'" in result.stderr
+
     def test_plan_single_env(self, invoke, mock_terraform_log):
         result = invoke("dev", "plan")
         assert result.exit_code == 0

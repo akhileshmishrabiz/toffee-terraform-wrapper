@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   names in addition to `prod` and `production`.
 - Record the environment and SHA-256 of every saved plan written by
   `toffee <env> plan -out=FILE` in `FILE.toffee.json`.
+- Add `toffee diff --exit-code`, which exits with 1 when environments differ
+  and 2 on errors.
 
 ### Changed
 
@@ -46,6 +48,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   systems, and never write through symlinks.
 - `env copy` refuses, before writing anything, when the copy would share state
   with an existing environment.
+- `toffee diff` redacts many more sensitive names (such as `api_key`,
+  `db_pass`, `pwd`, `auth`, `conn_str`, `database_url`, `ssh_key`,
+  `webhook_url`, and `github_pat`), maps and lists containing a sensitive key,
+  and URLs with embedded credentials.
+- `toffee diff` replaces C1 control and invisible formatting characters, such
+  as bidirectional overrides, before printing values.
 
 ### Fixed
 
@@ -59,3 +67,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   no longer drop the environment's variable file.
 - Closed stdin at a confirmation prompt aborts cleanly instead of raising an
   error.
+- `toffee diff` compares heredoc values instead of reading their bodies as
+  settings, ignores `/* */` comments, and reports unterminated blocks and
+  unreadable files as errors instead of silently merging or crashing.

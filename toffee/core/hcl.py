@@ -156,8 +156,8 @@ def _unescape(match: "re.Match") -> str:
 
 def _normalize(raw: str) -> str:
     if raw.lstrip().startswith("<<"):
-        return raw.strip()
-    return " ".join(line.strip() for line in raw.splitlines() if line.strip())
+        return raw.strip().replace("\r\n", "\n")
+    return " ".join(line.strip() for line in raw.split("\n") if line.strip())
 
 
 def _line(text: str, index: int) -> int:

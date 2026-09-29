@@ -5,10 +5,17 @@ from typing import Dict
 from rich.console import Console
 from rich.text import Text
 
-from ..core.environment_diff import is_sensitive_key, read_assignments
+from ..core.environment_diff import (
+    HCLError,
+    contains_secret,
+    is_sensitive_key,
+    read_assignments,
+)
+from ..core.text import printable
 from .base import BaseCommand
 
 console = Console()
+error_console = Console(stderr=True, soft_wrap=True)
 
 
 class DiffCommands(BaseCommand):
@@ -19,10 +26,13 @@ class DiffCommands(BaseCommand):
         source_name: str,
         target_name: str,
         show_sensitive: bool = False,
+        exit_code: bool = False,
     ) -> int:
+        # With --exit-code, 1 means "different", so errors need their own status.
+        error_code = 2 if exit_code else 1
         for name in (source_name, target_name):
             if not self.validate_environment(name):
-                return 1
+                return error_code
 
         source = self.env_manager.get_environment(source_name)
         target = self.env_manager.get_environment(target_name)
@@ -31,10 +41,23 @@ class DiffCommands(BaseCommand):
             ("Backend", source.backend_file, target.backend_file),
         )
 
-        difference_count = 0
+        loaded = []
         for title, source_path, target_path in comparisons:
-            source_values = read_assignments(source_path)
-            target_values = read_assignments(target_path)
+            values = []
+            for path in (source_path, target_path):
+                try:
+                    values.append(read_assignments(path))
+                except (OSError, UnicodeDecodeError, HCLError) as e:
+                    error_console.print(
+                        f"Error: Cannot read {self.display_path(path)}: {e}",
+                        markup=False,
+                        highlight=False,
+                    )
+                    return error_code
+            loaded.append((title, *values))
+
+        difference_count = 0
+        for title, source_values, target_values in loaded:
             difference_count += self._print_differences(
                 title,
                 source_name,
@@ -49,7 +72,7 @@ class DiffCommands(BaseCommand):
                 f"No configuration differences between "
                 f"[cyan]{source_name}[/] and [cyan]{target_name}[/]."
             )
-        return 0
+        return 1 if exit_code and difference_count else 0
 
     def _print_differences(
         self,
@@ -98,10 +121,7 @@ class DiffCommands(BaseCommand):
     ) -> Text:
         if key not in values:
             return Text("<not set>", style="dim")
-        if is_sensitive_key(key) and not show_sensitive:
+        value = values[key]
+        if not show_sensitive and (is_sensitive_key(key) or contains_secret(value)):
             return Text("<redacted>", style="dim")
-        value = "".join(
-            character if ord(character) >= 32 and ord(character) != 127 else "�"
-            for character in values[key]
-        )
-        return Text(value)
+        return Text(printable(value.replace("\n", "\\n")))

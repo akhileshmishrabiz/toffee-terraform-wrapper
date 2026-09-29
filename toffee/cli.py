@@ -154,14 +154,20 @@ def env_app() -> None:
     is_flag=True,
     help="Show values that are redacted by default.",
 )
+@click.option(
+    "--exit-code",
+    is_flag=True,
+    help="Exit with status 1 when the environments differ.",
+)
 def diff_environments(
     source: str,
     target: str,
     show_sensitive: bool,
+    exit_code: bool,
 ) -> None:
     """Compare variable and backend mappings for two environments."""
     raise click.exceptions.Exit(
-        get_diff_commands().compare(source, target, show_sensitive)
+        get_diff_commands().compare(source, target, show_sensitive, exit_code)
     )
 
 
