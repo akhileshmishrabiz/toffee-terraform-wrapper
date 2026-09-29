@@ -2,8 +2,10 @@
 
 ## Completed
 
-- **Production guardrails:** Require explicit confirmation for `apply` and
-  `destroy` against `prod` or `production`, independent of auto-approval.
+- **Production guardrails:** Require explicit confirmation for state-changing
+  commands against `prod`, `production`, and configured protected
+  environments, independent of auto-approval. Verify the origin of saved plans
+  and refuse environments that share state.
 - **Simple environment diff:** Compare top-level variable and backend settings
   across environments while redacting sensitive values by default.
 

@@ -52,11 +52,13 @@ def project_dir(tmp_path, mock_terraform_log):
 def invoke(cli_runner, project_dir):
     project, _log_file, env = project_dir
 
-    def _invoke(*args, input=None):
+    def _invoke(*args, input=None, extra_env=None):
         previous = os.getcwd()
         os.chdir(project)
         try:
-            return cli_runner.invoke(app, list(args), env=env, input=input)
+            return cli_runner.invoke(
+                app, list(args), env={**env, **(extra_env or {})}, input=input
+            )
         finally:
             os.chdir(previous)
 

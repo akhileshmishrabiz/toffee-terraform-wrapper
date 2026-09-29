@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mock terraform binary for tests. Logs invocations and exits successfully.
+# Mock terraform binary for tests. Logs invocations and exits successfully,
+# unless MOCK_TF_EXIT or MOCK_TF_EXIT_<env> (keyed by TF_DATA_DIR) says otherwise.
 set -euo pipefail
 
 LOG_FILE="${MOCK_TF_LOG:-/dev/null}"
@@ -15,11 +16,28 @@ if [[ "${1:-}" == "output" && "$*" == *"-json"* ]]; then
   printf '{"environment":"mock"}\n'
 fi
 
-case "${1:-}" in
-  init|plan|apply|destroy|validate|fmt|output|refresh|state|workspace|import|graph|providers|version|test|console|show|get|login|force-unlock|taint|untaint)
-    exit 0
-    ;;
-  *)
-    exit 0
-    ;;
-esac
+if [[ -n "${MOCK_TF_STDERR:-}" ]]; then
+  printf '%s\n' "$MOCK_TF_STDERR" >&2
+fi
+
+if [[ "${1:-}" == "plan" ]]; then
+  out=""
+  previous=""
+  for arg in "$@"; do
+    case "$arg" in
+      -out=*) out="${arg#-out=}" ;;
+    esac
+    if [[ "$previous" == "-out" ]]; then
+      out="$arg"
+    fi
+    previous="$arg"
+  done
+  if [[ -n "$out" ]]; then
+    printf 'PK\003\004mock plan for %s\n' "${TF_DATA_DIR##*/}" > "$out"
+  fi
+fi
+
+env_name="${TF_DATA_DIR:-}"
+env_name="${env_name##*/}"
+exit_name="MOCK_TF_EXIT_${env_name//[^A-Za-z0-9_]/_}"
+exit "${!exit_name:-${MOCK_TF_EXIT:-0}}"

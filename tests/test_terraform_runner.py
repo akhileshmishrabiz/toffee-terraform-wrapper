@@ -57,9 +57,43 @@ class TestTerraformRunner:
     def test_apply_saved_plan_does_not_add_var_file(self, tmp_path):
         env = self._make_env(tmp_path)
         plan_file = tmp_path / "release-plan"
-        plan_file.touch()
+        plan_file.write_bytes(b"PK\x03\x04plan")
         cmd = self.runner.build_command("apply", env, [str(plan_file)])
         assert cmd == ["/usr/bin/terraform", "apply", str(plan_file)]
+
+    def test_existing_files_in_flag_values_are_not_saved_plans(
+        self, tmp_path, monkeypatch
+    ):
+        env = self._make_env(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "extra.tfvars").write_bytes(b"PK\x03\x04not a plan")
+        (tmp_path / "aws_instance.web").write_bytes(b"PK\x03\x04not a plan")
+        args = ["-var-file", "extra.tfvars", "-target", "aws_instance.web"]
+
+        cmd = self.runner.build_command("apply", env, args)
+
+        assert f"-var-file={env.vars_file}" in cmd
+
+    def test_non_plan_positional_keeps_var_file(self, tmp_path, monkeypatch):
+        env = self._make_env(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "notes.txt").write_text("not a plan")
+
+        cmd = self.runner.build_command("apply", env, ["notes.txt"])
+
+        assert f"-var-file={env.vars_file}" in cmd
+
+    def test_saved_plan_is_resolved_against_chdir(self, tmp_path, monkeypatch):
+        env = self._make_env(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "tfplan").write_bytes(b"PK\x03\x04plan")
+
+        cmd = self.runner.build_command(
+            "apply", env, ["tfplan"], global_args=["-chdir=sub"]
+        )
+
+        assert cmd == ["/usr/bin/terraform", "-chdir=sub", "apply", "tfplan"]
 
     def test_init_migrate_state_does_not_add_reconfigure(self, tmp_path):
         env = self._make_env(tmp_path)

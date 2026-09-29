@@ -11,14 +11,25 @@ from typing import List, Optional
 from rich.console import Console
 from rich.table import Table
 
+from ..core.backend import (
+    Backend,
+    BackendError,
+    Identity,
+    describe_identity,
+    find_backend,
+    read_settings,
+    selected_workspace,
+    state_identity,
+)
 from ..core.config import Config
 from ..core.environment import EnvironmentManager
 from ..core.executor import run_captured, run_streamed
-from ..core.terraform import TerraformRunner
+from ..core.safety import is_protected_environment
+from ..core.terraform import TerraformRunner, working_directory
 
 console = Console()
-error_console = Console(stderr=True)
-status_console = Console(stderr=True)
+error_console = Console(stderr=True, soft_wrap=True)
+status_console = Console(stderr=True, soft_wrap=True)
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +47,14 @@ class BaseCommand:
 
         terraform_path = self.project_config.get("terraform_path", "terraform")
         self.terraform = TerraformRunner(terraform_path=terraform_path)
+        self.protected_names = self.project_config.get("protected_environments", [])
+
+    def is_protected(self, env_name: str) -> bool:
+        return is_protected_environment(env_name, self.protected_names)
+
+    def display_path(self, path: str) -> str:
+        relative = os.path.relpath(path, self.project_dir)
+        return path if relative.startswith("..") else relative
 
     def _setup_logging(self) -> None:
         if self.project_config.get("verbose", False):
@@ -156,7 +175,12 @@ class BaseCommand:
             if not self.validate_environment(env_name):
                 return 1
 
-        if not self.confirm_execution(env_names, command_name, extra_args):
+        global_args = list(global_args or [])
+        if not self.check_state_isolation(env_names, working_directory(global_args)):
+            return 1
+        if not self.prepare_execution(
+            env_names, command_name, extra_args, global_args
+        ):
             return 1
 
         if parallel and command_name == "init":
@@ -190,14 +214,115 @@ class BaseCommand:
                 return code
         return 0
 
-    def confirm_execution(
+    def prepare_execution(
         self,
         env_names: List[str],
         command_name: str,
         extra_args: List[str],
+        global_args: List[str],
     ) -> bool:
         """Allow subclasses to confirm execution after all targets are validated."""
         return True
+
+    def check_state_isolation(self, env_names: List[str], root_dir: str) -> bool:
+        """Refuse to run when a target shares files or state with another env."""
+        all_names = self.env_manager.get_environment_names()
+        owners = {}
+        for name in all_names:
+            env = self.env_manager.get_environment(name)
+            for path in (env.vars_file, env.backend_file):
+                if os.path.exists(path):
+                    owners.setdefault(os.path.realpath(path), []).append((name, path))
+
+        for target in env_names:
+            env = self.env_manager.get_environment(target)
+            for path in (env.vars_file, env.backend_file):
+                for owner, owner_path in owners.get(os.path.realpath(path), []):
+                    if owner != target:
+                        error_console.print(
+                            f"Error: {self.display_path(path)} resolves to the same "
+                            f"file as {self.display_path(owner_path)} "
+                            f"(environment '{owner}'). Each environment needs its "
+                            "own files.",
+                            markup=False,
+                            highlight=False,
+                        )
+                        return False
+
+        comparable = [
+            name
+            for name in all_names
+            if os.path.isfile(self.env_manager.get_environment(name).backend_file)
+        ]
+        if len(comparable) < 2:
+            return True
+        try:
+            backend = find_backend(root_dir)
+            identities = {
+                name: self.state_identity(
+                    backend,
+                    name,
+                    read_settings(self.env_manager.get_environment(name).backend_file),
+                    root_dir,
+                )
+                for name in comparable
+            }
+        except BackendError as e:
+            error_console.print(
+                f"Error: Cannot verify that environments use separate state: {e}",
+                markup=False,
+                highlight=False,
+            )
+            return False
+
+        for target in env_names:
+            for other in comparable:
+                if other != target and identities[other] == identities[target]:
+                    self.print_shared_state(
+                        target, other, identities[target], backend, root_dir
+                    )
+                    return False
+        return True
+
+    def state_identity(
+        self,
+        backend: Optional[Backend],
+        env_name: str,
+        settings: dict,
+        root_dir: str,
+    ) -> Identity:
+        workspace = selected_workspace(self.terraform_data_dir(env_name))
+        return state_identity(backend, settings, root_dir, workspace)
+
+    def print_shared_state(
+        self,
+        env_name: str,
+        other_name: str,
+        identity: Identity,
+        backend: Optional[Backend],
+        root_dir: str,
+    ) -> None:
+        error_console.print(
+            f"Error: Environments '{env_name}' and '{other_name}' would share "
+            f"Terraform state ({describe_identity(identity)}).",
+            markup=False,
+            highlight=False,
+        )
+        if backend is None:
+            error_console.print(
+                f"No backend block was found in {root_dir}, so every environment "
+                "uses the default local state. Add a backend block to the root "
+                "module.",
+                markup=False,
+                highlight=False,
+            )
+        else:
+            error_console.print(
+                "Give each environment its own state location in "
+                f"{self.display_path(self.env_manager.vars_dir)}/<env>.tfbackend.",
+                markup=False,
+                highlight=False,
+            )
 
     def _execute_parallel(
         self,
@@ -254,11 +379,12 @@ class BaseCommand:
         logger.debug("Running in parallel: %s", " ".join(cmd))
         return run_captured(cmd, self._environment_variables(env_name))
 
+    def terraform_data_dir(self, env_name: str) -> str:
+        return os.path.join(self.project_dir, ".toffee", "terraform-data", env_name)
+
     def _environment_variables(self, env_name: str) -> dict:
         """Return a subprocess environment with isolated Terraform metadata."""
-        data_dir = os.path.join(
-            self.project_dir, ".toffee", "terraform-data", env_name
-        )
+        data_dir = self.terraform_data_dir(env_name)
         os.makedirs(data_dir, exist_ok=True)
         process_env = os.environ.copy()
         process_env["TF_DATA_DIR"] = data_dir

@@ -13,9 +13,14 @@ DEFAULT_CONFIG = {
     "terraform_path": "terraform",
     "verbose": False,
     "auto_approve": False,
+    "protected_environments": [],
 }
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigError(ValueError):
+    """Raised when configuration is invalid and guessing would be unsafe."""
 
 
 class Config:
@@ -90,5 +95,17 @@ class Config:
                 # If there's any error, ignore the project config
                 logger.warning(f"Error reading project config: {e}")
 
-        # Project config overrides global config
-        return {**self.config, **project_config}
+        # Project config overrides global config, but can only add protection.
+        merged = {**self.config, **project_config}
+        protected = []
+        for source in (self.config, project_config):
+            names = source.get("protected_environments", [])
+            if not isinstance(names, list) or not all(
+                isinstance(name, str) for name in names
+            ):
+                raise ConfigError(
+                    "protected_environments must be a list of environment names"
+                )
+            protected.extend(name for name in names if name not in protected)
+        merged["protected_environments"] = protected
+        return merged

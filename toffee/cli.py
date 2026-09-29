@@ -11,6 +11,7 @@ from .commands.diff import DiffCommands
 from .commands.env import EnvCommands
 from .commands.info import InfoCommands
 from .commands.terraform import TerraformCommands
+from .core.config import ConfigError
 
 PASSTHROUGH_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
 
@@ -23,6 +24,12 @@ class EnvironmentFirstGroup(click.Group):
         if command is not None:
             return command
         return _environment_target_command(cmd_name)
+
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except ConfigError as e:
+            raise click.ClickException(f"Invalid configuration: {e}") from e
 
 
 console = Console()
@@ -75,6 +82,13 @@ def _environment_target_command(target_spec: str) -> click.Command:
             )
 
         raw_argv = [terraform_command, *terraform_args]
+        # Terraform skips empty arguments when choosing its subcommand, so an
+        # unset shell variable could otherwise hide the real command from Toffee.
+        if any(not arg.strip() for arg in raw_argv):
+            raise click.UsageError(
+                "Empty or whitespace-only arguments are not allowed. "
+                "Check for unset shell variables."
+            )
         command_index = next(
             (index for index, arg in enumerate(raw_argv) if not arg.startswith("-")),
             0,

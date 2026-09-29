@@ -174,6 +174,10 @@ toffee dev -compact-warnings plan
 Unknown commands are also passed through unchanged, allowing future Terraform
 versions to work without a Toffee release.
 
+Empty or whitespace-only arguments are rejected. Terraform silently skips them
+when choosing its subcommand, so an unset shell variable such as
+`toffee prod "$UNSET" apply` could otherwise hide the real command from Toffee.
+
 ### Multiple environments
 
 Targets are explicit and comma-separated:
@@ -206,6 +210,88 @@ space-separated flags:
 toffee dev plan -var environment=test
 ```
 
+## Protected environments
+
+`prod` and `production` are protected in any letter case. Before running a
+command that can change a protected environment's state, Toffee lists every
+target, shows each target's backend destination, and asks on stderr:
+
+```text
+⚠ You are about to apply changes to PROD.
+
+Environment: prod
+Backend: s3://my-terraform-state/my-service/prod/terraform.tfstate
+
+Continue? [y/N]:
+```
+
+The answer defaults to No. An empty answer or a closed stdin aborts. Neither
+Terraform's `-auto-approve` nor Toffee's `auto_approve` setting skips this
+prompt. A `y` piped on stdin (for example `echo y | toffee prod apply`) does
+answer it, so treat piped input as an explicit confirmation.
+
+Protected commands are `apply` (including `apply -destroy`), `destroy`,
+`refresh`, `import`, `taint`, `untaint`, `force-unlock`, `test`,
+`state rm|mv|push|replace-provider`, and `workspace delete`. When a
+multi-environment command includes a protected target, the single prompt lists
+all targets and highlights the protected ones.
+
+To protect more environments, list them in `.toffee.json`. The list only adds
+names: `prod` and `production` are always protected. Because it is a list, set
+it by editing the file rather than with `toffee config set`.
+
+```json
+{
+  "protected_environments": ["staging", "dr"]
+}
+```
+
+### Saved plans
+
+A saved plan changes the state it was planned against, whichever environment
+you name when applying it. When `toffee <env> plan -out=FILE` succeeds, Toffee
+writes `FILE.toffee.json` next to the plan with the environment name and the
+plan's SHA-256 hash. Then `toffee <env> apply FILE`:
+
+- refuses if the plan was created for a different environment, or if the plan
+  file changed after it was recorded;
+- asks for the protected confirmation if the plan belongs to a protected
+  environment;
+- asks for the protected confirmation if the plan has no record and the
+  project has any protected environment, because its origin cannot be
+  verified.
+
+`plan -out` and saved-plan `apply` accept only one target, since environments
+would otherwise overwrite or share one plan file. Relative plan paths are
+resolved against `-chdir` when it is given.
+
+### Separate state per environment
+
+Before running Terraform, Toffee refuses to continue if a target would share
+state with any other environment. It reads the backend type from the root
+module's `.tf` and `.tf.json` files (in the `-chdir` directory, if given) and
+compares the settings that select the state object, together with the
+workspace selected for that environment:
+
+| Backend | Compared settings |
+| --- | --- |
+| `s3` | `bucket`, `key` (and `workspace_key_prefix` outside the default workspace) |
+| `gcs` | `bucket`, `prefix` |
+| `azurerm` | `storage_account_name`, `container_name`, `key` |
+| `local` | `path` (default `terraform.tfstate`) |
+| `remote`, `cloud` | `hostname`, `organization`, `workspaces` name/prefix/tags |
+| `consul` | `path` |
+| `http` | `address` |
+| `kubernetes` | `secret_suffix`, `namespace` |
+| `pg` | `conn_str`, `schema_name` (the connection string is never printed) |
+| other | every setting except credential-like ones |
+
+Toffee also refuses to run when an environment's `.tfvars` or `.tfbackend`
+file resolves, for example through a symlink, to another environment's file.
+A root module without a backend block keeps every environment in the same
+default local state, so Toffee refuses to run it while more than one
+environment has a backend file.
+
 ## Environment management
 
 ```bash
@@ -217,6 +303,18 @@ toffee info env dev
 
 `info env` shows file paths but does not print file contents because Terraform
 variable and backend files can contain secrets.
+
+Environment names must be unique ignoring letter case, because macOS and
+Windows file systems usually treat `Prod.tfvars` and `prod.tfvars` as the same
+file.
+
+`env copy` rewrites only quoted values exactly equal to the source name (for
+example `environment = "dev"`) and, in the backend file, path segments or file
+name stems equal to the source name inside `key`, `prefix`, and `path` (for
+example `dev/terraform.tfstate` or `dev.tfstate`). It prints every rewrite so
+you can review it. It refuses, before writing anything, when the copy would
+share state with an existing environment. It never writes through a symlink,
+and it only moves the new files into place once both have been written.
 
 ### Compare environments
 
@@ -255,12 +353,13 @@ Project configuration lives in `.toffee.json`; global configuration lives in
 - Every target is validated before any Terraform process starts.
 - Sequential multi-environment execution stops on the first failure.
 - Each environment must have both its `.tfvars` and `.tfbackend` file.
-- Backend metadata is isolated per environment.
-- Applying to or destroying `prod` or `production` requires a separate Toffee
-  confirmation.
-- Neither Terraform's `-auto-approve` nor Toffee's `auto_approve` setting
-  bypasses the production confirmation.
-- Destruction requires confirmation unless `-auto-approve` is supplied.
+- Backend metadata is isolated per environment, and environments that would
+  share state are refused.
+- State-changing commands against protected environments require a separate
+  Toffee confirmation that neither `-auto-approve` nor `auto_approve` bypasses.
+- Saved plans are only applied to the environment they were created for.
+- Destruction, including `apply -destroy`, requires confirmation unless
+  `-auto-approve` is supplied on the command line.
 - Interactive commands cannot run concurrently.
 - Saved plans are applied without injecting a conflicting variable file.
 - Wrapper status is written to stderr, leaving Terraform stdout usable with

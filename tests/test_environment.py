@@ -82,6 +82,31 @@ class TestEnvironmentManager:
         assert manager._is_safe_env_path("dev", vars_dir_real) is True
         assert manager._is_safe_env_path("../vars-evil/dev", vars_dir_real) is False
 
+    def test_case_conflict_is_detected(self, tmp_path):
+        vars_dir = tmp_path / "vars"
+        vars_dir.mkdir()
+        (vars_dir / "prod.tfbackend").write_text("")
+        manager = EnvironmentManager(vars_dir=str(vars_dir))
+
+        assert manager.case_conflict("Prod") == "prod"
+        assert manager.case_conflict("prod") is None
+        success, error = manager.create_environment_template("PROD")
+        assert success is False
+        assert "differs only by case" in error
+
+    def test_create_refuses_symlinked_files(self, tmp_path):
+        vars_dir = tmp_path / "vars"
+        vars_dir.mkdir()
+        outside = tmp_path / "outside"
+        (vars_dir / "qa.tfvars").symlink_to(outside)
+        manager = EnvironmentManager(vars_dir=str(vars_dir))
+
+        success, error = manager.create_environment_template("qa")
+
+        assert success is False
+        assert "symlink" in error
+        assert not outside.exists()
+
     def test_refresh_environments(self, tmp_path):
         vars_dir = tmp_path / "vars"
         vars_dir.mkdir()

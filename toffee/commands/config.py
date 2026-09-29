@@ -71,6 +71,13 @@ class ConfigCommands(BaseCommand):
         # Convert value to the right type based on the default
         default_value = DEFAULT_CONFIG[key]
 
+        if isinstance(default_value, list):
+            console.print(
+                f"[bold red]Error:[/] {key} is a list. Edit it in .toffee.json, "
+                f'for example: "{key}": ["staging"]'
+            )
+            return 1
+
         if isinstance(default_value, bool):
             if value.lower() in ("yes", "true", "1", "y", "t"):
                 typed_value = True
