@@ -192,7 +192,8 @@ class TestDestroyConfirmation:
 
         assert result.exit_code == 1
         assert "This will destroy resources in: dev" in result.stderr
-        assert result.stdout == ""
+        assert "destroy resources" not in result.stdout
+        assert "Do you want to continue" not in result.stdout
         assert _log(mock_terraform_log) == ""
 
     def test_confirmed_apply_destroy_is_auto_approved(

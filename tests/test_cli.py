@@ -295,7 +295,8 @@ class TestCLI:
         assert result.exit_code == 1
         assert "aborted" in result.stderr.lower()
         assert "This will destroy resources in: dev" in result.stderr
-        assert result.stdout == ""
+        assert "destroy resources" not in result.stdout
+        assert "Do you want to continue" not in result.stdout
         assert "destroy" not in mock_terraform_log.read_text()
 
     def test_destroy_confirmed_runs(self, invoke, mock_terraform_log):

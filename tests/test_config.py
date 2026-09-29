@@ -28,6 +28,7 @@ class TestLoading:
 
         assert not (isolated_home / ".toffee").exists()
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
     def test_read_only_home_does_not_crash(self, invoke, isolated_home):
         isolated_home.chmod(stat.S_IRUSR | stat.S_IXUSR)
         try:
@@ -167,6 +168,7 @@ class TestSaving:
             "verbose": True
         }
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
     def test_global_save_failure_returns_error(self, invoke, isolated_home):
         isolated_home.chmod(stat.S_IRUSR | stat.S_IXUSR)
         try:

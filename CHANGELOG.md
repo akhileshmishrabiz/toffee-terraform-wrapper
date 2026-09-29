@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and 2 on errors.
 - Add the `TOFFEE_TERRAFORM_PATH` environment variable to choose the Terraform
   binary, taking precedence over configuration files.
+- Support running Toffee with `python -m toffee`.
 
 ### Changed
 
@@ -42,6 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of being ignored or partly applied.
 - `config set` writes only explicitly set global values, preserves other keys
   in `.toffee.json`, and replaces files atomically.
+- Require Python 3.10 or newer and click 8.2 or newer. Python 3.8 and 3.9 are
+  end-of-life, and the test suite relies on click 8.2 behavior.
 - `env copy` rewrites only quoted values equal to the source name and
   environment-named segments of backend `key`, `prefix`, and `path` values,
   prints each rewrite, and lists only the files it wrote.
@@ -114,3 +117,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Environment names with a trailing newline are rejected, and names that
   commands reject (such as `config`, `dev.eu`, or `my env`) are no longer
   listed.
+- Builds require setuptools 61 or newer, which prevents an empty
+  `UNKNOWN-0.0.0` wheel, and the version is defined once in
+  `toffee/__init__.py`.
+- Tests no longer read or write the real `~/.toffee`, and the integration test
+  runs this checkout instead of whichever `toffee` is on `PATH`. CI installs
+  Terraform so the integration test runs, tests Python 3.10 through 3.13, and
+  runs on every pull request.
+- The example1 prod backend uses the same region as its state bucket.

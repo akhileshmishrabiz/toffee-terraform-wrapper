@@ -4,36 +4,36 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ['3.12']
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
-        pip install -r requirements-dev.txt
-        pip install ruff pytest
-    
+        pip install -e ".[dev]"
+
     - name: Lint with ruff
-      run: |
-        ruff check .
-    
+      run: ruff check .
+
     - name: Test with pytest
-      run: |
-        cd ${{ github.workspace }}
-        python -m pytest
+      run: python -m pytest

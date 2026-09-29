@@ -237,7 +237,7 @@ class TestSignals:
 
     def _start(self, project, env, *args):
         return subprocess.Popen(
-            [sys.executable, "-m", "toffee.cli", *args],
+            [sys.executable, "-m", "toffee", *args],
             cwd=project,
             env=env,
             stdin=subprocess.DEVNULL,

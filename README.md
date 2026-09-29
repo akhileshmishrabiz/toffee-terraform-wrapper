@@ -38,7 +38,7 @@ backend metadata. Add `.toffee/` to the project `.gitignore`.
 
 ### Prerequisites
 
-- Python 3.8 or newer
+- Python 3.10 or newer
 - Terraform available on `PATH`
 
 ```bash
@@ -88,7 +88,14 @@ cd path/to/your-terraform-project
 ```
 
 Your root module remains normal Terraform code. Toffee does not require wrapper
-configuration files around modules.
+configuration files around modules. Declare the backend type in the root
+module and leave its settings to the environment files:
+
+```hcl
+terraform {
+  backend "s3" {}
+}
+```
 
 ### 2. Create an environment
 
@@ -137,8 +144,9 @@ toffee dev apply
 toffee env copy dev prod
 ```
 
-Update `vars/prod.tfvars` and `vars/prod.tfbackend`, especially the backend
-state key, then run:
+Toffee rewrites `"dev"` to `"prod"` and the `dev` segment of the backend `key`
+and prints each change. Review `vars/prod.tfvars` and `vars/prod.tfbackend`,
+especially the backend state key, then run:
 
 ```bash
 toffee prod init
@@ -153,7 +161,7 @@ and local Terraform metadata.
 The syntax is always:
 
 ```text
-toffee <environment>[,<environment>...] <terraform-command> [terraform-args]
+toffee <environment>[,<environment>...] <terraform-command> [terraform-args] [--parallel]
 ```
 
 Toffee passes the Terraform command and its arguments through without needing
@@ -425,19 +433,23 @@ TOFFEE_TERRAFORM_PATH=/opt/terraform/1.9/terraform toffee dev plan
 ## Safety guarantees
 
 - Every target is validated before any Terraform process starts.
-- Sequential multi-environment execution stops on the first failure.
+- Sequential multi-environment execution stops on the first failure (exit code
+  2 with `-detailed-exitcode` is not a failure).
 - Each environment must have both its `.tfvars` and `.tfbackend` file.
 - Backend metadata is isolated per environment, and environments that would
   share state are refused.
 - State-changing commands against protected environments require a separate
   Toffee confirmation that neither `-auto-approve` nor `auto_approve` bypasses.
-- Saved plans are only applied to the environment they were created for.
+- Saved plans recorded by Toffee are only applied to the environment they were
+  created for; unrecorded plans require the protected confirmation when the
+  project has a protected environment.
 - Destruction, including `apply -destroy`, requires confirmation unless
   `-auto-approve` is supplied on the command line.
-- Interactive commands cannot run concurrently.
+- Interactive commands cannot run concurrently, and parallel commands never
+  wait on hidden prompts.
 - Saved plans are applied without injecting a conflicting variable file.
 - Wrapper status is written to stderr, leaving Terraform stdout usable with
-  tools such as `jq`.
+  tools such as `jq`, including in parallel mode.
 
 ## Development
 
@@ -447,8 +459,11 @@ pytest
 ruff check .
 ```
 
-Real Terraform integration tests verify that dev and staging create distinct
-state files after both environments have been initialized.
+Tests use a temporary `HOME`, so your `~/.toffee` configuration never affects
+them. The real Terraform integration tests run this checkout with
+`python -m toffee` and are skipped when `terraform` is not on `PATH`; CI
+installs Terraform so they always run there. See the
+[testing guide](testing-README.MD) for details.
 
 Release history and future plans are available in the
 [changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).
