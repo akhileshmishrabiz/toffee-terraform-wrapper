@@ -218,6 +218,17 @@ toffee info env dev
 `info env` shows file paths but does not print file contents because Terraform
 variable and backend files can contain secrets.
 
+### Compare environments
+
+```bash
+toffee diff dev prod
+```
+
+This compares the top-level mappings in both environments' `.tfvars` and
+`.tfbackend` files without running Terraform. Only changed settings are shown.
+Values whose names look sensitive are redacted by default; use
+`--show-sensitive` only when explicitly needed.
+
 ## Configuration
 
 ```bash

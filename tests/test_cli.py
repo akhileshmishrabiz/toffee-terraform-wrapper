@@ -15,6 +15,55 @@ class TestCLI:
         assert "dev" in result.stdout
         assert "staging" in result.stdout
 
+    def test_diff_shows_variable_and_backend_changes(
+        self, invoke, mock_terraform_log
+    ):
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert "Variables differences" in result.stdout
+        assert "environment" in result.stdout
+        assert '"dev"' in result.stdout
+        assert '"prod"' in result.stdout
+        assert "Backend differences" in result.stdout
+        assert ".terraform-state/dev/terraform.tfstate" in result.stdout
+        assert ".terraform-state/prod/terraform.tfstate" in result.stdout
+        assert mock_terraform_log.read_text() == ""
+
+    def test_diff_redacts_sensitive_values(self, invoke, project_dir):
+        project, _, _ = project_dir
+        dev_vars = project / "vars" / "dev.tfvars"
+        prod_vars = project / "vars" / "prod.tfvars"
+        dev_vars.write_text(dev_vars.read_text() + '\napi_token = "dev-secret"\n')
+        prod_vars.write_text(prod_vars.read_text() + '\napi_token = "prod-secret"\n')
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert "api_token" in result.stdout
+        assert "<redacted>" in result.stdout
+        assert "dev-secret" not in result.stdout
+        assert "prod-secret" not in result.stdout
+
+    def test_diff_can_explicitly_show_sensitive_values(self, invoke, project_dir):
+        project, _, _ = project_dir
+        dev_vars = project / "vars" / "dev.tfvars"
+        prod_vars = project / "vars" / "prod.tfvars"
+        dev_vars.write_text(dev_vars.read_text() + '\napi_token = "dev-secret"\n')
+        prod_vars.write_text(prod_vars.read_text() + '\napi_token = "prod-secret"\n')
+
+        result = invoke("diff", "dev", "prod", "--show-sensitive")
+
+        assert result.exit_code == 0
+        assert '"dev-secret"' in result.stdout
+        assert '"prod-secret"' in result.stdout
+
+    def test_diff_rejects_missing_environment(self, invoke):
+        result = invoke("diff", "dev", "missing")
+
+        assert result.exit_code == 1
+        assert "not found" in result.stderr.lower()
+
     def test_plan_single_env(self, invoke, mock_terraform_log):
         result = invoke("dev", "plan")
         assert result.exit_code == 0

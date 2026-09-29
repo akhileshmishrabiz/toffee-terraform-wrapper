@@ -7,6 +7,7 @@ from rich.console import Console
 
 from . import __version__
 from .commands.config import ConfigCommands
+from .commands.diff import DiffCommands
 from .commands.env import EnvCommands
 from .commands.info import InfoCommands
 from .commands.terraform import TerraformCommands
@@ -42,6 +43,10 @@ def get_config_commands() -> ConfigCommands:
 
 def get_env_commands() -> EnvCommands:
     return EnvCommands()
+
+
+def get_diff_commands() -> DiffCommands:
+    return DiffCommands()
 
 
 def _environment_target_command(target_spec: str) -> click.Command:
@@ -125,6 +130,25 @@ def config_app() -> None:
 @app.group("env")
 def env_app() -> None:
     """Environment management commands."""
+
+
+@app.command("diff")
+@click.argument("source")
+@click.argument("target")
+@click.option(
+    "--show-sensitive",
+    is_flag=True,
+    help="Show values that are redacted by default.",
+)
+def diff_environments(
+    source: str,
+    target: str,
+    show_sensitive: bool,
+) -> None:
+    """Compare variable and backend mappings for two environments."""
+    raise click.exceptions.Exit(
+        get_diff_commands().compare(source, target, show_sensitive)
+    )
 
 
 @info_app.command("envs")
