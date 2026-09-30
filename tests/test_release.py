@@ -18,7 +18,7 @@ def test_release_version_is_single_sourced_and_documented(invoke):
     assert result.exit_code == 0
     assert result.stdout.strip() == "Toffee version 1.0.0"
     assert 'version = {attr = "toffee.__version__"}' in pyproject
-    assert "Version 1.0.0 is the first GA-quality release" in readme
+    assert "The current version is 1.0.0." in readme
 
 
 @pytest.mark.parametrize(
@@ -58,16 +58,27 @@ def test_readme_install_and_first_project_commands_match_cli():
         "toffee-terraform-wrapper.git",
         "uv tool install git+https://github.com/akhileshmishrabiz/"
         "toffee-terraform-wrapper.git",
-        "toffee new demo --provider none --backend local --envs dev,prod",
+        "Python 3.10 or newer",
+        "Terraform 1.5 or newer",
+        "toffee new service",
+        "service/vars/dev.tfbackend",
         "toffee dev init",
         "toffee dev validate",
         "toffee dev plan",
         "toffee dev apply",
-        "_TOFFEE_COMPLETE=bash_source toffee",
-        "_TOFFEE_COMPLETE=zsh_source toffee",
-        "_TOFFEE_COMPLETE=fish_source toffee",
     ):
         assert command in readme
 
     assert "pip install toffee" not in readme
     assert "[testing guide](TESTING.md)" in readme
+    for removed in (
+        "--name",
+        "--envs",
+        "--provider",
+        "--backend",
+        "--region",
+        "--dry-run",
+        "--agents",
+        "--template",
+    ):
+        assert removed not in readme

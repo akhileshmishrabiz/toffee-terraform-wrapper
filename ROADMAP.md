@@ -15,11 +15,10 @@
   `--exit-code` option for scripts.
 - **Project scaffolding:** `toffee new` writes one minimal built-in template
   (`versions.tf`, `main.tf`, `variables.tf`, `outputs.tf`, `providers.tf`,
-  `data.tf`, `modules/`, `vars/<env>.tfvars` and `vars/<env>.tfbackend` with
-  a unique state key per environment, `.toffee.json`, and `.gitignore`), with
-  `--envs`, `--provider`, `--backend`, `--region`, `--name`, `--dry-run`,
-  `--agents` for an `AGENTS.md`, and `--template <local dir>` using explicit
-  `{{token}}` substitution. It never overwrites existing files.
+  `data.tf`, `modules/`, `vars/dev.tfvars`, `vars/dev.tfbackend` with a unique
+  state key, `.toffee.json`, and `.gitignore`). The scaffold intentionally has
+  fixed AWS, S3, `us-east-1`, and `dev` defaults and no configuration options.
+  It never overwrites existing files.
 
 ## Planned
 
@@ -34,9 +33,6 @@
   committing to one policy engine.
 - **Optional cost estimates:** Integrate an external service such as Infracost
   for opt-in infrastructure cost estimation.
-- **Remote project templates:** Let `toffee new --template` use templates
-  from git repositories or URLs. Only local template directories are
-  supported today.
 - **AI-agent interface:** Provide stable `--json` output and documented exit
   codes for plan, check, diff, and cost, plus an MCP server (`toffee mcp`)
   exposing read, plan, and check tools. It will never apply to protected

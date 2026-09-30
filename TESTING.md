@@ -30,10 +30,9 @@ ruff format --check .
 - `tests/test_config.py` covers configuration validation, the
   `terraform_path` trust rule, and saving.
 - `tests/test_new.py` covers `toffee new`: the generated layout and contents,
-  separate state per environment, reruns, `.gitignore` merging (checked with
-  `git check-ignore`), error messages, custom templates, symlink refusal, the
-  `CHANGE-ME` guard on `init`, and the user experience: a golden copy of the
-  default output, help text, and running the printed next steps.
+  fixed command surface, reruns, `.gitignore` merging, existing Terraform
+  projects, symlink and atomic-write safety, removed-option errors, the
+  `CHANGE-ME` guard on `init`, and a golden copy of the compact output.
 - `tests/test_environment.py` covers environment discovery, validation, safe
   paths, and template creation.
 - `tests/test_environment_diff.py` covers the settings parser and redaction.
@@ -46,7 +45,8 @@ ruff format --check .
   initializes and applies dev and staging into distinct state files, checks
   that the empty-argument and cross-environment saved-plan bypasses are
   blocked, initializes through a symlinked project path, and initializes,
-  validates, and plans a fresh `toffee new --provider none` project.
+  validates, and plans a generated scaffold after adapting a temporary copy to
+  a provider-free local backend.
 - `tests/test_release.py` prevents the documented install/quick-start commands,
   complete internal help surface, and 1.0 version claims from drifting.
 

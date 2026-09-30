@@ -11,17 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Add `toffee new [DIRECTORY]` to scaffold a Terraform project for Toffee
-  without prompts: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`,
-  `providers.tf`, `data.tf`, `modules/`, `vars/<env>.tfvars` and
-  `vars/<env>.tfbackend` with a unique state key per environment,
-  `.toffee.json`, and `.gitignore`. Options are `--envs`, `--provider`
-  (`aws`, `google`, `azurerm`, `none`), `--backend` (`s3`, `gcs`, `azurerm`,
-  `local`; defaults to match the provider), `--region`, `--name`, `--agents`
-  (writes `AGENTS.md`), `--dry-run`, and `--template <local dir>` with
-  `{{token}}` substitution and per-environment `__env__` paths. It never
-  overwrites files, appends only missing `.gitignore` lines, and in a
-  directory that already has `.tf` files adds only Toffee's files. It prints
-  a compact file tree and at most three next steps.
+  without prompts or configuration options. It writes a minimal AWS/S3
+  `us-east-1` project with one `dev` environment, a unique state key,
+  Terraform files, `modules/`, `.toffee.json`, and `.gitignore`. It never
+  overwrites files, appends only missing `.gitignore` lines, and in a directory
+  that already has `.tf` files adds only Toffee's files.
 - `toffee <env> init` stops with a one-line error naming the file and setting
   while the environment's `.tfbackend` still contains the `CHANGE-ME`
   placeholder, unless the value is passed with `-backend-config`.
