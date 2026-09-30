@@ -1,7 +1,10 @@
 # Toffee
 
-Toffee is a small, environment-first Terraform wrapper. It keeps Terraform
-commands unchanged while isolating backend metadata for every environment.
+Toffee is an environment-first Terraform wrapper that keeps normal Terraform
+commands while isolating each environment's inputs, backend metadata, and local
+working data. Version 1.0.0 is the first GA-quality release of the software;
+this statement does not imply that a PyPI package, GitHub release, or Git tag
+has been published.
 
 ```bash
 toffee dev init
@@ -36,15 +39,20 @@ backend metadata. Add `.toffee/` to the project `.gitignore`.
 
 ## Installation
 
-### Prerequisites
+### Requirements and tested platforms
 
 - Python 3.10 or newer
-- Terraform available on `PATH`
+- Terraform available on `PATH` (or configured as described below)
 
 ```bash
 terraform version
 python3 --version
 ```
+
+The release suite runs on Python 3.10–3.13 and Ubuntu in CI. Release
+verification also uses Terraform 1.16 on macOS. Terraform-compatible CLIs such
+as OpenTofu can be selected with `terraform_path`, but OpenTofu and Windows have
+not been tested for this release.
 
 ### Recommended: install as an isolated CLI
 
@@ -70,19 +78,33 @@ pipx upgrade toffee
 uv tool upgrade toffee
 ```
 
+To uninstall:
+
+```bash
+pipx uninstall toffee
+# or
+uv tool uninstall toffee
+```
+
 ### Install from a local clone
 
 ```bash
 git clone https://github.com/akhileshmishrabiz/toffee-terraform-wrapper.git
 cd toffee-terraform-wrapper
-python3 -m pip install .
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
 toffee --version
 ```
+
+For development, use `python -m pip install -e ".[dev]"`.
 
 ## Start a new project
 
 ```bash
 toffee new my-service
+# Equivalent current-directory flow:
+# mkdir my-service && cd my-service && toffee new
 ```
 
 ```text
@@ -115,6 +137,22 @@ you must fill in are marked `CHANGE-ME` (the state bucket, plus `project_id`
 for Google). `toffee <env> init` stops with a one-line error while that
 environment's `.tfbackend` still contains `CHANGE-ME`, unless you pass the
 value with `-backend-config`.
+
+For a five-minute local-backend walkthrough that needs no cloud account:
+
+```bash
+toffee new demo --provider none --backend local --envs dev,prod
+cd demo
+toffee dev init
+toffee dev validate
+toffee dev plan
+toffee dev apply
+```
+
+For a cloud backend, first replace every `CHANGE-ME` value, then make provider
+and backend credentials available through the provider's normal environment
+variables, CLI login, workload identity, or credential files. Toffee never
+generates or stores cloud credentials.
 
 | Option | Default |
 | --- | --- |
@@ -314,7 +352,9 @@ Toffee adds:
 - `-backend-config=vars/<env>.tfbackend` and `-reconfigure` to `init`
   (`-reconfigure` is skipped when you pass `-reconfigure` or
   `-migrate-state`). Your own `-backend-config` values are appended after the
-  environment's file, so they supplement it.
+  environment's file, so they supplement it. Toffee parses inline values and
+  local override files before `init` and refuses an effective destination that
+  would share state with another environment.
 - `-var-file=vars/<env>.tfvars` to Terraform commands that accept variable
   files, except when applying a saved plan.
 - `-auto-approve` to `apply` when the `auto_approve` setting is enabled, unless
@@ -355,8 +395,7 @@ Continue? [y/N]:
 
 The answer defaults to No. An empty answer or a closed stdin aborts. Neither
 Terraform's `-auto-approve` nor Toffee's `auto_approve` setting skips this
-prompt. A `y` piped on stdin (for example `echo y | toffee prod apply`) does
-answer it, so treat piped input as an explicit confirmation.
+prompt. Automation should not feed answers to this human confirmation.
 
 Protected commands are `apply` (including `apply -destroy`), `destroy`,
 `refresh`, `import`, `taint`, `untaint`, `force-unlock`, `test`,
@@ -388,15 +427,16 @@ Toffee creates with `0600` permissions the first time it records a plan. Then
   file changed after it was recorded;
 - asks for the protected confirmation if the plan belongs to a protected
   environment;
-- asks for the protected confirmation, noting that the plan's origin cannot be
-  verified, if the project has any protected environment and the plan has no
-  record or its record's signature does not verify. That includes a record
-  that was edited by hand, has no signature, or was signed by another user or
-  machine, and the case where the key is missing or readable by other users.
+- asks for confirmation, noting that the plan's origin cannot be verified, if
+  the plan has no record or its record's signature does not verify. This
+  applies even when the named environment is not protected. It includes a
+  record that was edited by hand, has no signature, or was signed by another
+  user or machine, and the case where the key is missing or readable by other
+  users.
 
 A signature is only valid for the user and machine that created it, so a plan
 copied to another machine or CI job is unverified there and needs the
-protected confirmation. That is the intended safe default. If Toffee cannot
+confirmation. That is the intended safe default. If Toffee cannot
 create the key (for example because `HOME` is read-only), `plan -out` still
 succeeds but prints a warning and writes no record.
 
@@ -521,8 +561,9 @@ Project configuration lives in `.toffee.json`; global configuration lives in
 }
 ```
 
-Both files must contain a JSON object whose known settings have the right
-types: `auto_approve` and `verbose` must be `true` or `false` (not the string
+Both files must contain a JSON object using only the keys shown above. A typo
+or unknown key is an error. `auto_approve` and `verbose` must be `true` or
+`false` (not the string
 `"false"`), `vars_dir` and `terraform_path` non-empty strings, and
 `protected_environments` a list of names. An invalid or unreadable file is
 reported as an error and Toffee exits without running anything. `config set`
@@ -543,6 +584,12 @@ variable, which takes precedence over both files:
 toffee config set terraform_path /opt/terraform/1.9/terraform
 TOFFEE_TERRAFORM_PATH=/opt/terraform/1.9/terraform toffee dev plan
 ```
+
+Normal precedence is `TOFFEE_TERRAFORM_PATH` (for the executable only), then
+project config, global config, and built-in defaults. The one merge rule is
+`protected_environments`: project and global names are combined, while `prod`
+and `production` are always protected. A project `vars_dir` must resolve inside
+the project; a project config cannot redirect environment writes elsewhere.
 
 ## Safety guarantees
 
@@ -565,19 +612,111 @@ TOFFEE_TERRAFORM_PATH=/opt/terraform/1.9/terraform toffee dev plan
 - Wrapper status is written to stderr, leaving Terraform stdout usable with
   tools such as `jq`, including in parallel mode.
 
+## Command reference
+
+```text
+toffee [--version] [--help]
+toffee new [DIRECTORY] [--name NAME] [--envs LIST]
+           [--provider aws|google|azurerm|none]
+           [--backend s3|gcs|azurerm|local] [--region REGION]
+           [--template DIR] [--agents] [--dry-run]
+toffee env create NAME
+toffee env copy SOURCE TARGET
+toffee diff SOURCE TARGET [--show-sensitive] [--exit-code]
+toffee info envs
+toffee info env ENV
+toffee info commands
+toffee info version
+toffee config init
+toffee config show
+toffee config set KEY VALUE [--project]
+toffee ENV[,ENV...] [TERRAFORM-GLOBAL-OPTIONS] COMMAND [ARGS] [--parallel]
+```
+
+Run `toffee COMMAND --help` for internal command details. Help after an
+environment target, such as `toffee dev plan --help`, belongs to Terraform.
+
+## Shell completion
+
+Toffee uses Click's built-in completion for command names and options. Generate
+or test a completion script without modifying shell startup files (Bash
+completion requires Bash 4.4 or newer):
+
+```bash
+_TOFFEE_COMPLETE=bash_source toffee > /tmp/toffee-complete.bash
+_TOFFEE_COMPLETE=zsh_source toffee > /tmp/toffee-complete.zsh
+_TOFFEE_COMPLETE=fish_source toffee > /tmp/toffee-complete.fish
+```
+
+For the current shell session:
+
+```bash
+eval "$(_TOFFEE_COMPLETE=bash_source toffee)"  # bash
+eval "$(_TOFFEE_COMPLETE=zsh_source toffee)"   # zsh
+_TOFFEE_COMPLETE=fish_source toffee | source   # fish
+```
+
+Environment names and Terraform's evolving command/option set are intentionally
+not statically completed by Toffee.
+
+## Automation and exit codes
+
+Use Terraform's own noninteractive options and credentials. Parallel `apply`
+and destroy operations require an explicit command-line `-auto-approve`, but
+that flag never bypasses a protected-environment prompt. Closed stdin and EOF
+fail those prompts closed; do not pipe confirmation answers in CI.
+
+Terraform stdout is preserved byte-for-byte and wrapper status goes to stderr.
+Most commands return Terraform's exit code. For `plan -detailed-exitcode`,
+status 2 remains “changes present.” `toffee diff --exit-code` uses 0 for equal,
+1 for different, and 2 for errors; without `--exit-code`, differences return 0
+and errors return 1.
+
+## Troubleshooting
+
+- `Replace CHANGE-ME`: fill in the named backend setting or supply it with
+  `-backend-config`, then rerun `toffee <env> init`.
+- `would share Terraform state`: give every environment a different backend
+  key, prefix, path, workspace, or other backend identity setting.
+- `origin ... cannot be verified`: recreate the plan on this machine or
+  explicitly review and confirm the unverified saved plan.
+- `Missing vars/backend file`: create both `vars/<env>.tfvars` and
+  `vars/<env>.tfbackend`, or use `toffee env create <env>`.
+- `Invalid configuration`: fix the named JSON file and key/type. Toffee does
+  not silently ignore malformed or unknown configuration.
+- Terraform reports initialization is required: run `toffee <env> init`;
+  Toffee keeps separate initialization metadata per environment.
+
+## Security model and non-goals
+
+Toffee reduces accidental cross-environment operations; it is not a security
+boundary against a malicious local user, repository, Terraform binary,
+provider, or module. Review Terraform plans and protect cloud credentials,
+state backends, the repository, and `~/.toffee/plan-signing.key` with normal
+access controls. Backend identity checks parse a practical HCL subset and
+conservatively fall back when root configuration is invalid. A plan and its
+sidecar can still be replaced between Toffee's verification and Terraform's
+open; do not run untrusted processes concurrently in the project.
+
+Toffee does not manage credentials, replace Terraform state locking, evaluate
+Terraform expressions, or provide policy, lint, security scanning, cost,
+MCP/agent, Jev assessment, or remote-template features. Checkov, TFLint,
+policy/cost tooling, MCP/Jev, and remote templates remain roadmap items.
+
 ## Development
 
 ```bash
 pip install -e ".[dev]"
 pytest
 ruff check .
+ruff format --check .
 ```
 
 Tests use a temporary `HOME`, so your `~/.toffee` configuration never affects
 them. The real Terraform integration tests run this checkout with
 `python -m toffee` and are skipped when `terraform` is not on `PATH`; CI
 installs Terraform so they always run there. See the
-[testing guide](testing-README.MD) for details.
+[testing guide](TESTING.md) for details.
 
 Release history and future plans are available in the
 [changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-30
+
 ### Added
 
 - Add `toffee new [DIRECTORY]` to scaffold a Terraform project for Toffee
@@ -56,16 +58,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `toffee <env> <command> --help` shows Terraform's help instead of Toffee's.
 - Environment file paths are passed to Terraform relative to its working
   directory (or `-chdir` directory) instead of as absolute paths.
-- Invalid configuration (a non-object file, invalid JSON, or wrongly typed
-  known settings such as `"auto_approve": "false"`) is reported as an error
-  instead of being ignored or partly applied.
+- Invalid configuration (a non-object file, invalid JSON, unknown key, or
+  wrongly typed setting such as `"auto_approve": "false"`) is reported as an
+  error instead of being ignored or partly applied.
 - `config set` writes only explicitly set global values, preserves other keys
   in `.toffee.json`, and replaces files atomically.
 - Require Python 3.10 or newer and click 8.2 or newer. Python 3.8 and 3.9 are
   end-of-life, and the test suite relies on click 8.2 behavior.
+- Unverified saved plans now require confirmation for every environment, not
+  only projects that contain a protected environment.
 - `env copy` rewrites only quoted values equal to the source name and
   environment-named segments of backend `key`, `prefix`, and `path` values,
-  prints each rewrite, and lists only the files it wrote.
+  prints each rewrite, and refuses incomplete source environments.
 
 ### Security
 
@@ -74,9 +78,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Refuse to apply a saved plan through an environment other than the one it
   was created for, or after the plan file changed. Plan records are
   authenticated with an HMAC over the environment name and plan hash, using a
-  random `0600` key in `~/.toffee/`. Plans without a record, or whose record
-  was edited, is unsigned, or was signed by another user or machine, require
-  the protected confirmation when the project has a protected environment.
+  random `0600` key in `~/.toffee/`. Plans without a record, or with a record
+  that was edited, unsigned, or signed by another user or machine, require
+  confirmation before any apply.
+- Reject project-controlled `vars_dir` paths that resolve outside the project,
+  including through symlinks, preventing a cloned repository from redirecting
+  environment writes.
+- Protect state/workspace mutations even when Terraform options precede the
+  mutating subcommand, and reserve built-in command names in every letter case.
 - Refuse to run commands that can read or write state when a target shares
   backend state with another environment, and refuse any command when its
   files resolve to another environment's files. Commands that never touch
@@ -86,6 +95,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and Terraform reports the syntax error; another environment's unparsable
   `.tfbackend` is skipped with a warning. Local state paths are compared
   case-insensitively on macOS and Windows but shown in their original case.
+- Include user-supplied inline and file-based `init -backend-config` layers in
+  shared-state checks, closing an override path to another environment's state.
 - `env copy` and `env create` refuse names that differ only by case from an
   existing environment, which overwrote `prod` on case-insensitive file
   systems, and never write through symlinks.
@@ -157,3 +168,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Terraform so the integration test runs, tests Python 3.10 through 3.13, and
   runs on every pull request.
 - The example1 prod backend uses the same region as its state bucket.
+- `info version` reports the configured Terraform or OpenTofu CLI's first
+  version line without crashing on non-UTF-8 output.
+- Terraform examples are normalized with `terraform fmt`.
+
+[Unreleased]: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/compare/c69b783...v1.0.0

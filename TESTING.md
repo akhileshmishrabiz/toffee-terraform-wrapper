@@ -15,6 +15,7 @@ through 3.13 with Terraform installed.
 pytest
 pytest --cov=toffee --cov-report=term-missing
 ruff check .
+ruff format --check .
 ```
 
 ## Test structure
@@ -46,6 +47,8 @@ ruff check .
   that the empty-argument and cross-environment saved-plan bypasses are
   blocked, initializes through a symlinked project path, and initializes,
   validates, and plans a fresh `toffee new --provider none` project.
+- `tests/test_release.py` prevents the documented install/quick-start commands,
+  complete internal help surface, and 1.0 version claims from drifting.
 
 An autouse fixture gives every test a temporary `HOME` and clears
 `TOFFEE_TERRAFORM_PATH`, `TF_WORKSPACE`, and `TF_DATA_DIR`, so a developer's

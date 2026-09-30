@@ -2,6 +2,10 @@
 
 ## Completed
 
+- **1.0 GA (2026-09-30):** Audited and verified the environment-first wrapper,
+  production guardrails, state isolation, signed saved-plan records, parallel
+  execution, configuration, project scaffolding, environment diff, packaging,
+  documentation, and supported Python matrix for the 1.0.0 release.
 - **Production guardrails:** Require explicit confirmation for state-changing
   commands against `prod`, `production`, and configured protected
   environments, independent of auto-approval. Verify the origin of saved plans
@@ -21,8 +25,10 @@
 
 - **Unified checks:** Provide one intuitive workflow that orchestrates
   Terraform `fmt` and `validate`, TFLint, and Checkov source scans.
-- **Automation-friendly CLI:** Add machine-readable output, richer help, and
-  shell completion.
+- **Automation-friendly CLI:** Add stable Toffee-owned machine-readable output
+  and richer structured help. Click shell completion for current Toffee
+  commands is documented; dynamic environment and Terraform completion remains
+  planned.
 - **Plan policy checks:** Support Checkov plan scans and pluggable custom policy
   enforcement, evaluating options such as OPA or Conftest without prematurely
   committing to one policy engine.
