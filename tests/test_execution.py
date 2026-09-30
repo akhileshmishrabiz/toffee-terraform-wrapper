@@ -146,9 +146,7 @@ class TestExitCodes:
     def test_without_detailed_exitcode_two_is_a_failure(
         self, invoke, mock_terraform_log
     ):
-        result = invoke(
-            "dev,staging", "plan", extra_env={"MOCK_TF_EXIT_dev": "2"}
-        )
+        result = invoke("dev,staging", "plan", extra_env={"MOCK_TF_EXIT_dev": "2"})
 
         assert result.exit_code == 2
         assert len(_log(mock_terraform_log).splitlines()) == 1
@@ -160,7 +158,11 @@ class TestArgvHandling:
 
         assert result.exit_code == 0
         assert "Usage: toffee" not in result.output
-        assert _log(mock_terraform_log).rstrip().endswith("plan -var-file=vars/dev.tfvars --help")
+        assert (
+            _log(mock_terraform_log)
+            .rstrip()
+            .endswith("plan -var-file=vars/dev.tfvars --help")
+        )
 
     def test_running_line_is_not_rich_markup(self, invoke, mock_terraform_log):
         result = invoke("dev", "plan", "-var", "cidrs=[/]")
@@ -190,13 +192,17 @@ class TestArgvHandling:
     def test_auto_approve_is_inserted_before_positionals(
         self, invoke, project_dir, mock_terraform_log
     ):
-        assert invoke("config", "set", "auto_approve", "true", "--project").exit_code == 0
+        assert (
+            invoke("config", "set", "auto_approve", "true", "--project").exit_code == 0
+        )
 
         assert invoke("dev", "apply", "-target", "a.b").exit_code == 0
         assert invoke("dev", "apply", "-auto-approve=false", input="").exit_code == 0
 
         lines = _log(mock_terraform_log).splitlines()
-        assert lines[0].endswith("apply -var-file=vars/dev.tfvars -auto-approve -target a.b")
+        assert lines[0].endswith(
+            "apply -var-file=vars/dev.tfvars -auto-approve -target a.b"
+        )
         assert lines[1].endswith("apply -var-file=vars/dev.tfvars -auto-approve=false")
 
 
@@ -252,7 +258,9 @@ class TestSignals:
             assert time.monotonic() < deadline, "terraform stand-in did not start"
             time.sleep(0.05)
 
-    @pytest.mark.parametrize("args", [["dev", "plan"], ["dev,staging", "plan", "--parallel"]])
+    @pytest.mark.parametrize(
+        "args", [["dev", "plan"], ["dev,staging", "plan", "--parallel"]]
+    )
     def test_ctrl_c_waits_for_terraform_to_finish(self, slow_project, args):
         project, env, tmp_path = slow_project
         process = self._start(project, env, *args)

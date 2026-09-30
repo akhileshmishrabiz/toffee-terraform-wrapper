@@ -26,6 +26,7 @@ class Environment:
         """Check if the environment has valid files"""
         return os.path.isfile(self.vars_file) and os.path.isfile(self.backend_file)
 
+
 class EnvironmentManager:
     """Manages discovery and validation of Terraform environments"""
 
@@ -122,7 +123,7 @@ class EnvironmentManager:
                 "Environment name must start with a letter or digit and contain "
                 "only letters, digits, underscores, and hyphens",
             )
-        if name in RESERVED_ENV_NAMES:
+        if name.casefold() in RESERVED_ENV_NAMES:
             return (
                 False,
                 f"Environment name '{name}' is reserved for the Toffee command of "
@@ -243,8 +244,7 @@ class EnvironmentManager:
         if conflict:
             return (
                 False,
-                f"'{name}' differs only by case from existing environment "
-                f"'{conflict}'",
+                f"'{name}' differs only by case from existing environment '{conflict}'",
             )
 
         try:

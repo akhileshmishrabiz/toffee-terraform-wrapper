@@ -39,14 +39,14 @@ class InfoCommands(BaseCommand):
             result = subprocess.run(
                 [self.terraform.terraform_path, "-version"],
                 capture_output=True,
-                text=True,
                 check=False,
             )
             if result.returncode == 0:
-                for line in result.stdout.splitlines():
-                    if "Terraform v" in line:
-                        terraform_version = line.strip()
-                        break
+                output = result.stdout.decode("utf-8", errors="replace")
+                terraform_version = next(
+                    (printable(line.strip()) for line in output.splitlines() if line.strip()),
+                    "Unknown",
+                )
         except OSError:
             pass
 
@@ -55,7 +55,7 @@ class InfoCommands(BaseCommand):
         table.add_column("Version", style="green")
 
         table.add_row("Toffee", toffee_version)
-        table.add_row("Terraform", terraform_version)
+        table.add_row("Terraform/OpenTofu", terraform_version)
 
         console.print(table)
         return 0

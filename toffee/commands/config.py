@@ -14,6 +14,7 @@ from ..core.config import (
     PROJECT_CONFIG_NAME,
     ConfigError,
     is_project_terraform_name,
+    project_vars_dir_error,
     read_config_file,
     untrusted_terraform_path_error,
     validate_value,
@@ -40,7 +41,9 @@ class ConfigCommands(BaseCommand):
         for key in sorted(merged_config.keys()):
             value = merged_config.get(key)
             if isinstance(value, bool):
-                value_text = Text("Yes", style="green") if value else Text("No", style="red")
+                value_text = (
+                    Text("Yes", style="green") if value else Text("No", style="red")
+                )
             elif value is None:
                 value_text = Text("None", style="italic")
             elif isinstance(value, list):
@@ -93,6 +96,11 @@ class ConfigCommands(BaseCommand):
                 f"Error: {untrusted_terraform_path_error(value)}", markup=False
             )
             return 1
+        if project and key == "vars_dir":
+            problem = project_vars_dir_error(os.getcwd(), value)
+            if problem:
+                error_console.print(f"Error: {problem}", markup=False)
+                return 1
 
         try:
             if project:

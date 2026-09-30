@@ -61,9 +61,7 @@ def _exit_status(returncode: int) -> int:
     return 128 - returncode if returncode < 0 else returncode
 
 
-def run_streamed(
-    cmd: List[str], process_env: Optional[Dict[str, str]] = None
-) -> int:
+def run_streamed(cmd: List[str], process_env: Optional[Dict[str, str]] = None) -> int:
     """
     Run a Terraform command with inherited stdio so interactive prompts work.
 
@@ -104,5 +102,7 @@ def run_parallel(jobs: Sequence[Job], max_workers: int = 8) -> List[CapturedResu
             stdout, stderr = process.communicate()
             return _exit_status(process.returncode), stdout, stderr
 
-        with ThreadPoolExecutor(max_workers=max(1, min(len(jobs), max_workers))) as pool:
+        with ThreadPoolExecutor(
+            max_workers=max(1, min(len(jobs), max_workers))
+        ) as pool:
             return list(pool.map(run, jobs))

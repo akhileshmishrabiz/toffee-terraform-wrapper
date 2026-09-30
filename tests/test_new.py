@@ -168,9 +168,7 @@ class TestDefaultScaffold:
             "encrypt": "true",
         }
 
-    def test_generated_config_passes_validation_and_keeps_prod_protected(
-        self, work
-    ):
+    def test_generated_config_passes_validation_and_keeps_prod_protected(self, work):
         toffee("new", "svc", "--envs", "dev,prod")
 
         path = work / "svc" / ".toffee.json"
@@ -305,7 +303,9 @@ class TestReruns:
         assert result.exit_code == 0
         assert result.stdout == "Nothing to create; all files already exist in ./.\n"
         assert result.stderr == ""
-        assert {path: (work / path).read_bytes() for path in files_under(work)} == before
+        assert {
+            path: (work / path).read_bytes() for path in files_under(work)
+        } == before
 
     def test_adding_an_environment_reports_only_new_files(self, work):
         toffee("new")
@@ -340,7 +340,9 @@ class TestReruns:
         assert "main.tf" not in result.stdout
 
     def test_rerun_reuses_the_existing_provider_backend_and_project(self, work):
-        toffee("new", "--provider", "google", "--name", "shop", "--region", "europe-west1")
+        toffee(
+            "new", "--provider", "google", "--name", "shop", "--region", "europe-west1"
+        )
 
         result = toffee("new", "--envs", "qa")
 
@@ -422,23 +424,37 @@ class TestGitignore:
         toffee("new")
 
         def ignored(path):
-            return subprocess.run(
-                ["git", "check-ignore", "-q", "--no-index", path],
-                cwd=work,
-                env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1"},
-                check=False,
-            ).returncode == 0
+            return (
+                subprocess.run(
+                    ["git", "check-ignore", "-q", "--no-index", path],
+                    cwd=work,
+                    env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1"},
+                    check=False,
+                ).returncode
+                == 0
+            )
 
         for path in (
-            ".toffee.json", ".terraform.lock.hcl", "vars/dev.tfvars",
-            "vars/dev.tfbackend", "main.tf",
+            ".toffee.json",
+            ".terraform.lock.hcl",
+            "vars/dev.tfvars",
+            "vars/dev.tfbackend",
+            "main.tf",
         ):
             assert not ignored(path), path
         for path in (
-            ".terraform/providers/x", ".toffee/terraform-data/dev/x",
-            "terraform.tfstate", "terraform.tfstate.backup", "state/dev/terraform.tfstate",
-            "crash.log", "crash.123.log", "tfplan", "dev.tfplan",
-            "tfplan.toffee.json", "dev.tfplan.toffee.json", "out.plan.toffee.json",
+            ".terraform/providers/x",
+            ".toffee/terraform-data/dev/x",
+            "terraform.tfstate",
+            "terraform.tfstate.backup",
+            "state/dev/terraform.tfstate",
+            "crash.log",
+            "crash.123.log",
+            "tfplan",
+            "dev.tfplan",
+            "tfplan.toffee.json",
+            "dev.tfplan.toffee.json",
+            "out.plan.toffee.json",
         ):
             assert ignored(path), path
 
@@ -447,10 +463,16 @@ class TestErrors:
     @pytest.mark.parametrize(
         "envs, expected",
         [
-            ("new", "reserved for the Toffee command of the same name (reserved: "
-             "config, diff, env, info, new)"),
-            ("dev.eu", "start with a letter or digit and contain only letters, "
-             "digits, underscores, and hyphens"),
+            (
+                "new",
+                "reserved for the Toffee command of the same name (reserved: "
+                "config, diff, env, info, new)",
+            ),
+            (
+                "dev.eu",
+                "start with a letter or digit and contain only letters, "
+                "digits, underscores, and hyphens",
+            ),
             ("../prod", "start with a letter or digit"),
             ("dev,,prod", "for example --envs dev,prod"),
             ("Dev,dev", "differ only by case"),
@@ -466,12 +488,20 @@ class TestErrors:
     @pytest.mark.parametrize(
         "option, value, expected",
         [
-            ("--provider", "aws2", "Unknown --provider 'aws2'. Did you mean 'aws'? "
-             "Choose from: aws, google, azurerm, none."),
+            (
+                "--provider",
+                "aws2",
+                "Unknown --provider 'aws2'. Did you mean 'aws'? "
+                "Choose from: aws, google, azurerm, none.",
+            ),
             ("--provider", "gcp", "Did you mean 'google'?"),
             ("--provider", "azure", "Did you mean 'azurerm'?"),
-            ("--backend", "s4", "Unknown --backend 's4'. Did you mean 's3'? "
-             "Choose from: s3, gcs, azurerm, local."),
+            (
+                "--backend",
+                "s4",
+                "Unknown --backend 's4'. Did you mean 's3'? "
+                "Choose from: s3, gcs, azurerm, local.",
+            ),
             ("--backend", "consul", "Choose from: s3, gcs, azurerm, local."),
             ("--region", 'us"east', "--region 'us\"east' may contain only"),
             ("--name", "my service", "--name 'my service' must start with a letter"),
@@ -506,7 +536,7 @@ class TestErrors:
         result = toffee("new", "--backend", "gcs", "--envs", "qa")
 
         assert_one_line_error(result)
-        assert 'Omit --backend to use s3' in result.stderr
+        assert "Omit --backend to use s3" in result.stderr
         assert not (work / "vars/qa.tfvars").exists()
 
     def test_invalid_existing_config_writes_nothing(self, work):
@@ -540,12 +570,12 @@ class TestCustomTemplate:
         (root / "vars").mkdir(parents=True)
         (root / "envs" / "__env__").mkdir(parents=True)
         (root / "main.tf").write_text(
-            'locals {\n'
+            "locals {\n"
             '  name   = "${var.project}-{{project}}"\n'
             '  banner = "%{ if true }{{ region }}%{ endif }"\n'
             '  helm   = "{{ .Values.image }}"\n'
             '  dollar = "$${literal}"\n'
-            '}\n'
+            "}\n"
         )
         (root / "vars" / "__env__.tfvars").write_text('environment = "{{env}}"\n')
         (root / "vars" / "__env__.tfbackend").write_text(
@@ -561,15 +591,28 @@ class TestCustomTemplate:
 
     def test_tokens_and_env_paths_are_rendered(self, work, template):
         result = toffee(
-            "new", "out", "--template", str(template), "--envs", "dev,prod",
-            "--name", "demo", "--backend", "local",
+            "new",
+            "out",
+            "--template",
+            str(template),
+            "--envs",
+            "dev,prod",
+            "--name",
+            "demo",
+            "--backend",
+            "local",
         )
 
         assert result.exit_code == 0, result.output
         out = work / "out"
         assert files_under(out) == [
-            "blob.bin", "envs/dev/README.md", "envs/prod/README.md", "main.tf",
-            "vars/dev.tfbackend", "vars/dev.tfvars", "vars/prod.tfbackend",
+            "blob.bin",
+            "envs/dev/README.md",
+            "envs/prod/README.md",
+            "main.tf",
+            "vars/dev.tfbackend",
+            "vars/dev.tfvars",
+            "vars/prod.tfbackend",
             "vars/prod.tfvars",
         ]
         main = (out / "main.tf").read_text()
@@ -581,7 +624,8 @@ class TestCustomTemplate:
         assert (out / "envs/dev/README.md").read_text() == "dev of demo on aws/local\n"
         assert (out / "blob.bin").read_bytes() == b"\xff\x00{{project}}"
         assert next_steps(result.stdout) == [
-            "cd out && toffee dev init", "toffee dev plan",
+            "cd out && toffee dev init",
+            "toffee dev plan",
         ]
 
     def test_env_token_outside_env_paths_is_an_error(self, work, template):

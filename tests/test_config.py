@@ -46,7 +46,18 @@ class TestLoading:
             ("{not json", "is not valid JSON"),
             ('{"vars_dir": null}', "vars_dir must be a non-empty string"),
             ('{"auto_approve": "false"}', "auto_approve must be true or false"),
-            ('{"protected_environments": [1]}', "protected_environments must be a list"),
+            (
+                '{"protected_environments": [1]}',
+                "protected_environments must be a list",
+            ),
+            (
+                '{"protected_environments": ["stage one"]}',
+                "contains invalid environment name",
+            ),
+            (
+                '{"protected_environments": ["Stage", "stage"]}',
+                "contains duplicate environment name",
+            ),
         ],
     )
     def test_invalid_global_config_is_a_clean_error(
@@ -81,11 +92,24 @@ class TestLoading:
         assert message in result.stderr
         assert mock_terraform_log.read_text() == ""
 
-    def test_unknown_keys_are_ignored(self, invoke, project_dir):
+    def test_unknown_keys_are_rejected(self, invoke, project_dir):
         project, _, _ = project_dir
         _write_project(project, '{"future_setting": {"a": 1}}')
 
-        assert invoke("dev", "plan").exit_code == 0
+        result = invoke("dev", "plan")
+
+        assert result.exit_code == 1
+        assert "unknown configuration key 'future_setting'" in result.stderr
+
+    @pytest.mark.parametrize("value", ["../outside", "/tmp/outside"])
+    def test_project_vars_dir_cannot_escape_project(self, invoke, project_dir, value):
+        project, _, _ = project_dir
+        _write_project(project, json.dumps({"vars_dir": value}))
+
+        result = invoke("env", "create", "qa")
+
+        assert result.exit_code == 1
+        assert "vars_dir" in result.stderr
 
 
 class TestTerraformPathTrust:
@@ -254,17 +278,29 @@ class TestSaving:
         assert result.exit_code == 1
         assert (project / ".toffee.json").read_text() == '{"vars_dir": "vars",'
 
-    def test_project_set_preserves_other_keys(self, invoke, project_dir):
+    def test_project_set_preserves_other_known_keys(self, invoke, project_dir):
         project, _, _ = project_dir
-        _write_project(project, '{"vars_dir": "vars", "future_setting": 1}')
+        _write_project(project, '{"vars_dir": "vars", "verbose": false}')
 
-        assert invoke("config", "set", "auto_approve", "true", "--project").exit_code == 0
+        assert (
+            invoke("config", "set", "auto_approve", "true", "--project").exit_code == 0
+        )
 
         assert json.loads((project / ".toffee.json").read_text()) == {
             "vars_dir": "vars",
-            "future_setting": 1,
+            "verbose": False,
             "auto_approve": True,
         }
+
+    def test_config_set_refuses_project_vars_dir_escape(self, invoke, project_dir):
+        project, _, _ = project_dir
+        before = (project / ".toffee.json").read_text()
+
+        result = invoke("config", "set", "vars_dir", "../outside", "--project")
+
+        assert result.exit_code == 1
+        assert "resolves outside the project" in result.stderr
+        assert (project / ".toffee.json").read_text() == before
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
     def test_unwritable_project_config_is_a_clean_error(self, invoke, project_dir):

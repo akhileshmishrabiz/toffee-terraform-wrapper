@@ -17,7 +17,9 @@ from toffee.core.backend import (
 
 
 def _identity(root, text, workspace="default"):
-    return state_identity(find_backend(str(root)), settings_from_text(text), str(root), workspace)
+    return state_identity(
+        find_backend(str(root)), settings_from_text(text), str(root), workspace
+    )
 
 
 def _write_backend(root, block):
@@ -27,7 +29,9 @@ def _write_backend(root, block):
 def test_s3_identity_uses_bucket_and_key(tmp_path):
     _write_backend(tmp_path, 'backend "s3" {}')
 
-    dev = _identity(tmp_path, 'bucket = "b"\nkey = "dev/terraform.tfstate"\nregion = "a"')
+    dev = _identity(
+        tmp_path, 'bucket = "b"\nkey = "dev/terraform.tfstate"\nregion = "a"'
+    )
     prod = _identity(tmp_path, 'bucket = "b"\nkey = "prod/terraform.tfstate"')
     copy = _identity(
         tmp_path, 'bucket = "b"\nkey = "prod/terraform.tfstate"\nregion = "x"'
@@ -47,7 +51,9 @@ def test_workspace_key_prefix_only_matters_outside_default_workspace(tmp_path):
 
 
 def test_block_settings_are_merged_with_environment_settings(tmp_path):
-    _write_backend(tmp_path, 'backend "s3" {\n    bucket = "b"\n    key = "shared"\n  }')
+    _write_backend(
+        tmp_path, 'backend "s3" {\n    bucket = "b"\n    key = "shared"\n  }'
+    )
 
     assert _identity(tmp_path, 'region = "a"') == _identity(tmp_path, 'region = "b"')
     assert _identity(tmp_path, 'key = "dev"') != _identity(tmp_path, 'key = "prod"')

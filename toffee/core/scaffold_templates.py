@@ -4,7 +4,12 @@ from typing import List, Tuple
 
 PROVIDERS = ("aws", "google", "azurerm", "none")
 BACKENDS = ("s3", "gcs", "azurerm", "local")
-BACKEND_FOR_PROVIDER = {"aws": "s3", "google": "gcs", "azurerm": "azurerm", "none": "local"}
+BACKEND_FOR_PROVIDER = {
+    "aws": "s3",
+    "google": "gcs",
+    "azurerm": "azurerm",
+    "none": "local",
+}
 DEFAULT_REGIONS = {"aws": "us-east-1", "google": "us-central1", "azurerm": "eastus"}
 _CLOUD_FOR_BACKEND = {"s3": "aws", "gcs": "google", "azurerm": "azurerm"}
 PROVIDER_VERSIONS = {"aws": "~> 6.0", "google": "~> 8.0", "azurerm": "~> 5.0"}
@@ -71,12 +76,21 @@ data "azurerm_client_config" "current" {}
 }
 
 _DATA_OUTPUTS = {
-    "aws": ("account_id", "AWS account Terraform deploys into.",
-            "data.aws_caller_identity.current.account_id"),
-    "google": ("project_id", "Google Cloud project Terraform deploys into.",
-               "data.google_client_config.current.project"),
-    "azurerm": ("subscription_id", "Azure subscription Terraform deploys into.",
-                "data.azurerm_client_config.current.subscription_id"),
+    "aws": (
+        "account_id",
+        "AWS account Terraform deploys into.",
+        "data.aws_caller_identity.current.account_id",
+    ),
+    "google": (
+        "project_id",
+        "Google Cloud project Terraform deploys into.",
+        "data.google_client_config.current.project",
+    ),
+    "azurerm": (
+        "subscription_id",
+        "Azure subscription Terraform deploys into.",
+        "data.azurerm_client_config.current.subscription_id",
+    ),
 }
 
 _BACKEND_SETTINGS = {

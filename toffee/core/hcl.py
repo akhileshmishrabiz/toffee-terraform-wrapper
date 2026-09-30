@@ -16,9 +16,7 @@ _BLOCK = re.compile(
     r"(" + _IDENTIFIER + r')((?:[ \t]+(?:"x*"|' + _IDENTIFIER + r"))*)[ \t]*\{"
 )
 _LABEL = re.compile(r'"((?:[^"\\]|\\.)*)"|(' + _IDENTIFIER + r")")
-_STRING_LITERAL = re.compile(
-    r'"((?:\$\$\{|%%\{|[^"\\$%\n]|\\.|\$(?!\{)|%(?!\{))*)"'
-)
+_STRING_LITERAL = re.compile(r'"((?:\$\$\{|%%\{|[^"\\$%\n]|\\.|\$(?!\{)|%(?!\{))*)"')
 _ESCAPE = re.compile(r"\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
 _ESCAPES = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\"}
 _OPENERS = "([{"
@@ -252,9 +250,7 @@ def _template_end(text: str, index: int, string_start: int) -> int:
             if depth == 0:
                 return index + 1
         index += 1
-    raise HCLError(
-        f"unterminated string starting on line {_line(text, string_start)}"
-    )
+    raise HCLError(f"unterminated string starting on line {_line(text, string_start)}")
 
 
 def _heredoc_end(text: str, header: "re.Match") -> int:
@@ -296,8 +292,7 @@ def _expression_end(scanned: _Scanned, start: int, key: str) -> int:
         index += 1
     if depth > 0:
         raise HCLError(
-            f"unterminated value for '{key}' starting on line "
-            f"{_line(skeleton, start)}"
+            f"unterminated value for '{key}' starting on line {_line(skeleton, start)}"
         )
     return length
 

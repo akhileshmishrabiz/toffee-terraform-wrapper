@@ -56,7 +56,10 @@ class NewCommand:
             elif change.action == scaffold.APPEND:
                 added = _count(change.added_lines, "line")
                 entries.append(
-                    (change.path, f" (would add {added})" if dry_run else f" (added {added})")
+                    (
+                        change.path,
+                        f" (would add {added})" if dry_run else f" (added {added})",
+                    )
                 )
         lines += _tree(location or "./", entries)
 
@@ -96,7 +99,9 @@ class NewCommand:
             steps.append(f"Replace {PLACEHOLDER} in {_join(listed)}")
         env = plan.envs[0]
         if scaffold.env_is_complete(plan, env):
-            cd = f"cd {shlex.quote(os.path.normpath(directory))} && " if location else ""
+            cd = (
+                f"cd {shlex.quote(os.path.normpath(directory))} && " if location else ""
+            )
             steps += [f"{cd}toffee {env} init", f"toffee {env} plan"]
         return steps
 

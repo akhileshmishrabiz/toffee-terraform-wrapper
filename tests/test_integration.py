@@ -127,8 +127,14 @@ class TestRealTerraform:
         scaffold.mkdir()
 
         created = _toffee(
-            scaffold, "new", "--provider", "none", "--backend", "local",
-            "--envs", "dev,staging",
+            scaffold,
+            "new",
+            "--provider",
+            "none",
+            "--backend",
+            "local",
+            "--envs",
+            "dev,staging",
         )
         _assert_ok(created)
         assert "toffee dev init" in created.stdout

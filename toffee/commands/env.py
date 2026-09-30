@@ -94,6 +94,12 @@ class EnvCommands(BaseCommand):
                 f"[bold red]Error:[/] Source environment '{source}' not found"
             )
             return 1
+        if not source_env.is_valid:
+            error_console.print(
+                f"[bold red]Error:[/] Source environment '{source}' is incomplete; "
+                "both its .tfvars and .tfbackend files are required"
+            )
+            return 1
         if source == target:
             error_console.print(
                 "[bold red]Error:[/] Source and target must be different environments"
@@ -114,7 +120,9 @@ class EnvCommands(BaseCommand):
                 )
                 return 1
         if not self.env_manager.is_safe_env_path(target):
-            error_console.print(f"[bold red]Error:[/] Invalid environment name: '{target}'")
+            error_console.print(
+                f"[bold red]Error:[/] Invalid environment name: '{target}'"
+            )
             return 1
 
         planned = []

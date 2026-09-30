@@ -13,14 +13,14 @@ from toffee.core.environment_diff import (
 def test_read_assignments_handles_scalars_comments_and_collections(tmp_path):
     config = tmp_path / "dev.tfvars"
     config.write_text(
-        '# ignored\n'
+        "# ignored\n"
         'environment = "dev" # inline comment\n'
         'url = "https://example.com/#fragment"\n'
-        'enabled = true\n'
-        'tags = {\n'
+        "enabled = true\n"
+        "tags = {\n"
         '  Team = "platform"\n'
         '  Tier = "app"\n'
-        '}\n'
+        "}\n"
     )
 
     assert read_assignments(str(config)) == {
@@ -35,7 +35,7 @@ def test_heredoc_bodies_are_values_not_assignments(tmp_path):
     config = tmp_path / "dev.tfvars"
     config.write_text(
         "script = <<EOF\n"
-        "region = \"inside\"\n"
+        'region = "inside"\n'
         "# not a comment\n"
         "EOF\n"
         "indented = <<-EOT\n"
@@ -54,9 +54,7 @@ def test_heredoc_bodies_are_values_not_assignments(tmp_path):
 def test_block_comments_are_ignored(tmp_path):
     config = tmp_path / "dev.tfvars"
     config.write_text(
-        '/* region = "commented"\n'
-        'still = "comment" */\n'
-        'region = /* inline */ "real"\n'
+        '/* region = "commented"\nstill = "comment" */\nregion = /* inline */ "real"\n'
     )
 
     assert read_assignments(str(config)) == {"region": '"real"'}

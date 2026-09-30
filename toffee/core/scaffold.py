@@ -97,19 +97,25 @@ def plan_project(options: Options) -> Plan:
     """Validate options and decide what to create, append to, or skip."""
     root = os.path.abspath(options.directory or ".")
     if os.path.lexists(root) and not os.path.isdir(root):
-        raise ScaffoldError(f"{printable(options.directory)} exists and is not a directory.")
+        raise ScaffoldError(
+            f"{printable(options.directory)} exists and is not a directory."
+        )
 
     config = _existing_config(root)
     vars_dir = _vars_dir(config)
     found = _inspect(root, vars_dir, config)
 
-    provider = _choice(
-        "--provider", options.provider, templates.PROVIDERS, _PROVIDER_ALIASES
-    ) or found.provider or "aws"
-    backend = _choice("--backend", options.backend, templates.BACKENDS, _BACKEND_ALIASES)
+    provider = (
+        _choice("--provider", options.provider, templates.PROVIDERS, _PROVIDER_ALIASES)
+        or found.provider
+        or "aws"
+    )
+    backend = _choice(
+        "--backend", options.backend, templates.BACKENDS, _BACKEND_ALIASES
+    )
     if backend and found.backend and backend != found.backend:
         raise ScaffoldError(
-            f"--backend {backend} does not match the backend \"{found.backend}\" "
+            f'--backend {backend} does not match the backend "{found.backend}" '
             f"declared in the root module. Omit --backend to use {found.backend}."
         )
     backend = backend or found.backend or templates.BACKEND_FOR_PROVIDER[provider]
@@ -299,7 +305,9 @@ def _check_writable(root: str, root_real: str, path: str) -> None:
         raise ScaffoldError(f"{printable(path)}: a parent path is not a directory.")
     real = os.path.realpath(current)
     if os.path.commonpath([real, root_real]) != root_real:
-        raise ScaffoldError(f"Refusing to write outside the project: {printable(path)}.")
+        raise ScaffoldError(
+            f"Refusing to write outside the project: {printable(path)}."
+        )
 
 
 def _gitignore_change(target: str, template_content: bytes) -> FileChange:
@@ -322,7 +330,12 @@ def _gitignore_change(target: str, template_content: bytes) -> FileChange:
     separator = "\n" if existing and not existing.endswith("\n") else ""
     spacer = "\n" if existing.strip() else ""
     content = (
-        existing + separator + spacer + "# Added by toffee new\n" + "\n".join(missing) + "\n"
+        existing
+        + separator
+        + spacer
+        + "# Added by toffee new\n"
+        + "\n".join(missing)
+        + "\n"
     )
     return FileChange(
         ".gitignore",
@@ -358,10 +371,34 @@ def _link_new(temporary: str, target: str, path: str) -> None:
             f"{printable(path)} appeared while writing; it was not overwritten."
         ) from None
     except OSError:
-        # Some file systems do not support hard links.
-        if os.path.lexists(target):
+        # Some file systems do not support hard links. O_EXCL preserves the
+        # never-overwrite guarantee if another process creates the target.
+        descriptor = None
+        created = False
+        try:
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
+            with (
+                open(temporary, "rb") as source,
+                os.fdopen(descriptor, "wb") as destination,
+            ):
+                descriptor = None
+                while chunk := source.read(1024 * 1024):
+                    destination.write(chunk)
+            os.chmod(target, stat.S_IMODE(os.stat(temporary).st_mode))
+        except FileExistsError:
+            raise ScaffoldError(
+                f"{printable(path)} appeared while writing; it was not overwritten."
+            ) from None
+        except BaseException:
+            if descriptor is not None:
+                os.close(descriptor)
+            if created:
+                try:
+                    os.remove(target)
+                except OSError:
+                    pass
             raise
-        os.replace(temporary, target)
 
 
 def _final_text(plan: Plan, path: str) -> Optional[str]:
@@ -382,7 +419,9 @@ def _existing_config(root: str) -> Dict[str, object]:
     try:
         return read_config_file(os.path.join(root, PROJECT_CONFIG_NAME))
     except ConfigError as e:
-        raise ScaffoldError(f"Cannot use the existing {PROJECT_CONFIG_NAME}: {e}") from e
+        raise ScaffoldError(
+            f"Cannot use the existing {PROJECT_CONFIG_NAME}: {e}"
+        ) from e
 
 
 def _vars_dir(config: Dict[str, object]) -> str:
@@ -415,7 +454,7 @@ def _inspect(root: str, vars_dir: str, config: Dict[str, object]) -> _Existing:
     if backend is not None and backend is not UNKNOWN_BACKEND:
         if backend.type not in templates.BACKENDS:
             raise ScaffoldError(
-                f"The root module declares backend \"{printable(backend.type)}\", but "
+                f'The root module declares backend "{printable(backend.type)}", but '
                 f"toffee new only writes {', '.join(templates.BACKENDS)} settings. "
                 "Add environments with: toffee env create <name>"
             )
@@ -476,7 +515,8 @@ def _is_terraform_file(path: str) -> bool:
 def _declared_only(tfvars: str, variables: set) -> str:
     """Keep only assignments to variables the existing root module declares."""
     kept = [
-        line for line in tfvars.splitlines(keepends=True)
+        line
+        for line in tfvars.splitlines(keepends=True)
         if line.split("=", 1)[0].strip() in variables
     ]
     return "".join(kept) or "# Terraform variables for {{env}}.\n"
@@ -556,7 +596,9 @@ def _envs(raw: Optional[str], existing: List[str], vars_path: str) -> List[str]:
         valid, error = manager.validate_env_name(name)
         if not valid:
             raise ScaffoldError(f"--envs: {error}.")
-        twin = next((other for other in unique if other.casefold() == name.casefold()), None)
+        twin = next(
+            (other for other in unique if other.casefold() == name.casefold()), None
+        )
         conflict = twin or manager.case_conflict(name)
         if conflict:
             raise ScaffoldError(

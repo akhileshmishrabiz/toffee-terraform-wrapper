@@ -28,6 +28,8 @@ class TestEnvironmentManager:
             "diff",
             "info",
             "new",
+            "New",
+            "CONFIG",
         ]
         for name in invalid_names:
             valid, _ = EnvironmentManager.validate_env_name(name)

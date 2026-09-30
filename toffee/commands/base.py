@@ -15,6 +15,7 @@ from ..core.backend import (
     Backend,
     BackendError,
     Identity,
+    backend_config_overrides,
     describe_identity,
     find_backend_or_unknown,
     read_settings,
@@ -143,9 +144,7 @@ class BaseCommand:
                 return 1
             env = self.env_manager.get_environment(env_name)
 
-        cmd = self.terraform.build_command(
-            command_name, env, extra_args, global_args
-        )
+        cmd = self.terraform.build_command(command_name, env, extra_args, global_args)
         status_console.print(
             f"Running: {display_command(cmd)}", markup=False, highlight=False
         )
@@ -192,15 +191,26 @@ class BaseCommand:
                 return 1
 
         global_args = list(global_args or [])
+        root_dir = working_directory(global_args)
+        overrides = {}
+        if command_name == "init":
+            try:
+                overrides = backend_config_overrides(extra_args, root_dir)
+            except BackendError as e:
+                error_console.print(
+                    f"Error: Cannot verify backend overrides: {e}",
+                    markup=False,
+                    highlight=False,
+                )
+                return 1
         if not self.check_state_isolation(
             env_names,
-            working_directory(global_args),
+            root_dir,
             uses_state(command_name, extra_args, global_args),
+            overrides,
         ):
             return 1
-        if not self.prepare_execution(
-            env_names, command_name, extra_args, global_args
-        ):
+        if not self.prepare_execution(env_names, command_name, extra_args, global_args):
             return 1
 
         if parallel and command_name == "init":
@@ -271,7 +281,11 @@ class BaseCommand:
         return True
 
     def check_state_isolation(
-        self, env_names: List[str], root_dir: str, compare_state: bool = True
+        self,
+        env_names: List[str],
+        root_dir: str,
+        compare_state: bool = True,
+        target_overrides: Optional[dict] = None,
     ) -> bool:
         """Refuse to run when a target shares files or state with another env."""
         all_names = self.env_manager.get_environment_names()
@@ -323,10 +337,12 @@ class BaseCommand:
                     return False
                 self.warn_unreadable_peer(backend_file, e)
         backend = self.load_backend(root_dir)
-        identities = {
-            name: self.state_identity(backend, name, values, root_dir)
-            for name, values in settings.items()
-        }
+        identities = {}
+        for name, values in settings.items():
+            effective = dict(values)
+            if target_overrides and name in env_names:
+                effective.update(target_overrides)
+            identities[name] = self.state_identity(backend, name, effective, root_dir)
 
         for target in env_names:
             for other, identity in identities.items():

@@ -32,9 +32,7 @@ class TestProtectedPrompt:
         assert "Empty or whitespace-only arguments" in result.stderr
         assert _log(mock_terraform_log) == ""
 
-    def test_empty_argument_after_command_is_rejected(
-        self, invoke, mock_terraform_log
-    ):
+    def test_empty_argument_after_command_is_rejected(self, invoke, mock_terraform_log):
         result = invoke("dev", "plan", "", input="y\n")
 
         assert result.exit_code == 2
@@ -53,20 +51,14 @@ class TestProtectedPrompt:
     def test_parallel_does_not_skip_protected_confirmation(
         self, invoke, mock_terraform_log
     ):
-        result = invoke(
-            "dev,prod", "apply", "-auto-approve", "--parallel", input="n\n"
-        )
+        result = invoke("dev,prod", "apply", "-auto-approve", "--parallel", input="n\n")
 
         assert result.exit_code == 1
         assert "Continue? [y/N]" in result.stderr
         assert _log(mock_terraform_log) == ""
 
-    def test_confirmed_parallel_protected_apply_runs(
-        self, invoke, mock_terraform_log
-    ):
-        result = invoke(
-            "dev,prod", "apply", "-auto-approve", "--parallel", input="y\n"
-        )
+    def test_confirmed_parallel_protected_apply_runs(self, invoke, mock_terraform_log):
+        result = invoke("dev,prod", "apply", "-auto-approve", "--parallel", input="y\n")
 
         assert result.exit_code == 0
         assert len(_log(mock_terraform_log).splitlines()) == 2
@@ -162,9 +154,23 @@ class TestProtectedPrompt:
         assert _log(mock_terraform_log) == ""
 
     @pytest.mark.parametrize(
-        "args", [["plan"], ["state", "list"], ["workspace", "list"], ["output"]]
+        "args",
+        [
+            ["state", "-lock-timeout=1s", "rm", "null_resource.example"],
+            ["workspace", "-no-color", "delete", "old"],
+        ],
     )
-    def test_read_only_commands_do_not_prompt(
+    def test_options_before_mutating_subcommand_cannot_bypass_prompt(
+        self, invoke, mock_terraform_log, args
+    ):
+        result = invoke("prod", *args, input="n\n")
+
+        assert result.exit_code == 1
+        assert "Continue? [y/N]" in result.stderr
+        assert _log(mock_terraform_log) == ""
+
+    @pytest.mark.parametrize("args", [["apply", "--help"], ["state", "rm", "--help"]])
+    def test_help_for_mutating_commands_does_not_prompt(
         self, invoke, mock_terraform_log, args
     ):
         result = invoke("prod", *args)
@@ -173,9 +179,17 @@ class TestProtectedPrompt:
         assert "Continue?" not in result.stderr
         assert len(_log(mock_terraform_log).splitlines()) == 1
 
-    def test_mixed_destroy_prompt_lists_every_target(
-        self, invoke, mock_terraform_log
-    ):
+    @pytest.mark.parametrize(
+        "args", [["plan"], ["state", "list"], ["workspace", "list"], ["output"]]
+    )
+    def test_read_only_commands_do_not_prompt(self, invoke, mock_terraform_log, args):
+        result = invoke("prod", *args)
+
+        assert result.exit_code == 0
+        assert "Continue?" not in result.stderr
+        assert len(_log(mock_terraform_log).splitlines()) == 1
+
+    def test_mixed_destroy_prompt_lists_every_target(self, invoke, mock_terraform_log):
         result = invoke("dev,prod", "destroy", input="n\n")
 
         assert result.exit_code == 1
@@ -200,9 +214,7 @@ class TestDestroyConfirmation:
         assert "Do you want to continue" not in result.stdout
         assert _log(mock_terraform_log) == ""
 
-    def test_confirmed_apply_destroy_is_auto_approved(
-        self, invoke, mock_terraform_log
-    ):
+    def test_confirmed_apply_destroy_is_auto_approved(self, invoke, mock_terraform_log):
         result = invoke("dev", "apply", "-destroy", input="y\n")
 
         assert result.exit_code == 0
@@ -255,9 +267,7 @@ class TestSavedPlans:
         assert "was created for environment 'prod', not 'dev'" in result.stderr
         assert " apply" not in _log(mock_terraform_log)
 
-    def test_prod_plan_applied_to_prod_is_confirmed(
-        self, invoke, mock_terraform_log
-    ):
+    def test_prod_plan_applied_to_prod_is_confirmed(self, invoke, mock_terraform_log):
         assert invoke("prod", "plan", "-out=tfplan").exit_code == 0
 
         declined = invoke("prod", "apply", "tfplan", input="n\n")
@@ -304,11 +314,9 @@ class TestSavedPlans:
         assert "cannot be verified: it has no Toffee record" in closed.stderr
         assert "Continue? [y/N]" in closed.stderr
         assert accepted.exit_code == 0
-        assert _log(mock_terraform_log).splitlines()[-1].endswith(
-            "apply manual.tfplan"
-        )
+        assert _log(mock_terraform_log).splitlines()[-1].endswith("apply manual.tfplan")
 
-    def test_unrecorded_plan_without_protected_environments_runs(
+    def test_unrecorded_plan_without_protected_environments_fails_closed(
         self, invoke, project_dir, mock_terraform_log
     ):
         project, _, _ = project_dir
@@ -316,10 +324,12 @@ class TestSavedPlans:
             (project / "vars" / name).unlink()
         (project / "manual.tfplan").write_bytes(b"PK\x03\x04plan")
 
-        result = invoke("dev", "apply", "manual.tfplan")
+        result = invoke("dev", "apply", "manual.tfplan", input="")
 
-        assert result.exit_code == 0
-        assert "Continue?" not in result.stderr
+        assert result.exit_code == 1
+        assert "cannot be verified" in result.stderr
+        assert "Continue? [y/N]" in result.stderr
+        assert " apply " not in _log(mock_terraform_log)
 
     def test_failed_plan_removes_stale_record(
         self, invoke, project_dir, mock_terraform_log
@@ -327,9 +337,7 @@ class TestSavedPlans:
         project, _, _ = project_dir
         assert invoke("prod", "plan", "-out=tfplan").exit_code == 0
 
-        failed = invoke(
-            "dev", "plan", "-out=tfplan", extra_env={"MOCK_TF_EXIT": "1"}
-        )
+        failed = invoke("dev", "plan", "-out=tfplan", extra_env={"MOCK_TF_EXIT": "1"})
         result = invoke("dev", "apply", "tfplan", input="n\n")
 
         assert failed.exit_code == 1
@@ -396,9 +404,10 @@ class TestSavedPlans:
         key_file = isolated_home / ".toffee" / "plan-signing.key"
         assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
         assert len(self._record(project)["signature"]) == 64
-        assert key_file.read_text().strip() not in (
-            project / "tfplan.toffee.json"
-        ).read_text()
+        assert (
+            key_file.read_text().strip()
+            not in (project / "tfplan.toffee.json").read_text()
+        )
 
     def test_signing_key_is_reused(self, invoke, isolated_home):
         assert invoke("dev", "plan", "-out=a.tfplan").exit_code == 0
@@ -516,6 +525,33 @@ class TestSavedPlans:
 
 
 class TestStateIsolation:
+    def test_init_inline_backend_override_cannot_select_peer_state(
+        self, invoke, mock_terraform_log
+    ):
+        result = invoke(
+            "dev",
+            "init",
+            "-backend-config=path=.terraform-state/prod/terraform.tfstate",
+        )
+
+        assert result.exit_code == 1
+        assert "would share Terraform state" in result.stderr
+        assert _log(mock_terraform_log) == ""
+
+    def test_init_backend_override_file_cannot_select_peer_state(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "override.tfbackend").write_text(
+            'path = ".terraform-state/prod/terraform.tfstate"\n'
+        )
+
+        result = invoke("dev", "init", "-backend-config=override.tfbackend")
+
+        assert result.exit_code == 1
+        assert "would share Terraform state" in result.stderr
+        assert _log(mock_terraform_log) == ""
+
     def test_shared_backend_state_is_refused(
         self, invoke, project_dir, mock_terraform_log
     ):
@@ -670,8 +706,7 @@ class TestStateIsolation:
         project, _, _ = project_dir
         (project / "broken.tf").write_text('resource "null_resource" "x" {\n')
         (project / "vars" / "staging.tfbackend").write_text(
-            'path = ".terraform-state/prod/terraform.tfstate"\n'
-            'password = "differs"\n'
+            'path = ".terraform-state/prod/terraform.tfstate"\npassword = "differs"\n'
         )
 
         result = invoke("staging", "plan")
@@ -715,9 +750,7 @@ class TestStateIsolation:
         validated = invoke("dev", "validate")
 
         assert refused.exit_code == 1
-        assert "Cannot verify that environments use separate state" in (
-            refused.stderr
-        )
+        assert "Cannot verify that environments use separate state" in (refused.stderr)
         assert "missing value for 'path'" in refused.stderr
         assert validated.exit_code == 0
         assert _log(mock_terraform_log).splitlines()[0].endswith("validate")
@@ -807,9 +840,7 @@ class TestEnvironmentCopySafety:
         assert 'vars/qa.tfvars:2: "dev" -> "qa"' in result.stdout
         assert "Review the copied files" in result.stdout
 
-    def test_copy_rewrites_backend_segments_without_slashes(
-        self, invoke, project_dir
-    ):
+    def test_copy_rewrites_backend_segments_without_slashes(self, invoke, project_dir):
         project, _, _ = project_dir
         (project / "vars" / "prod.tfbackend").write_text(
             'path = "prod/terraform.tfstate"\n'
@@ -822,9 +853,7 @@ class TestEnvironmentCopySafety:
             'path = "qa/terraform.tfstate"\n'
         )
 
-    def test_copy_refuses_colliding_state_before_writing(
-        self, invoke, project_dir
-    ):
+    def test_copy_refuses_colliding_state_before_writing(self, invoke, project_dir):
         project, _, _ = project_dir
         (project / "vars" / "dev.tfbackend").write_text(
             'path = "state/shared.tfstate"\n'
@@ -850,15 +879,15 @@ class TestEnvironmentCopySafety:
         assert "Refusing to write through symlink" in result.stderr
         assert outside.read_text() == "keep me\n"
 
-    def test_copy_lists_only_written_files(self, invoke, project_dir):
+    def test_copy_refuses_partial_source_environment(self, invoke, project_dir):
         project, _, _ = project_dir
         (project / "vars" / "solo.tfvars").write_text('environment = "solo"\n')
 
         result = invoke("env", "copy", "solo", "qa")
 
-        assert result.exit_code == 0
-        assert "qa.tfvars" in result.stdout
-        assert "qa.tfbackend" not in result.stdout
+        assert result.exit_code == 1
+        assert "incomplete" in result.stderr
+        assert not (project / "vars" / "qa.tfvars").exists()
         assert not (project / "vars" / "qa.tfbackend").exists()
 
     def test_copy_overwrite_prompt_defaults_to_no(self, invoke, project_dir):

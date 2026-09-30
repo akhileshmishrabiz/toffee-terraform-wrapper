@@ -74,7 +74,7 @@ def _environment_target_command(target_spec: str) -> click.Command:
         context_settings=PASSTHROUGH_CONTEXT,
         add_help_option=False,
     )
-    @click.argument("terraform_command")
+    @click.argument("terraform_command", required=False)
     @click.argument("terraform_args", nargs=-1, type=click.UNPROCESSED)
     @click.option(
         "--parallel",
@@ -82,17 +82,25 @@ def _environment_target_command(target_spec: str) -> click.Command:
         help="Run the Terraform command concurrently for all target environments.",
     )
     def target_command(
-        terraform_command: str,
+        terraform_command: Optional[str],
         terraform_args: tuple,
         parallel: bool,
     ) -> None:
-        env_names = list(
-            dict.fromkeys(name.strip() for name in target_spec.split(","))
-        )
+        if terraform_command is None:
+            raise click.UsageError(
+                f"Missing Terraform command after environment target {target_spec!r}. "
+                "Run: toffee <env>[,<env>...] <terraform-command> [args]"
+            )
+        env_names = list(dict.fromkeys(name.strip() for name in target_spec.split(",")))
         if any(not name for name in env_names):
             raise click.UsageError(
                 "Environment targets must be comma-separated names, for example: "
                 "toffee dev,prod plan"
+            )
+        folded = [name.casefold() for name in env_names]
+        if len(folded) != len(set(folded)):
+            raise click.UsageError(
+                "Environment targets must be unique ignoring letter case."
             )
 
         raw_argv = [terraform_command, *terraform_args]
@@ -322,9 +330,7 @@ def set_config(
     project: bool,
 ) -> None:
     """Set a configuration value."""
-    raise click.exceptions.Exit(
-        get_config_commands().set_config(key, value, project)
-    )
+    raise click.exceptions.Exit(get_config_commands().set_config(key, value, project))
 
 
 @config_app.command("init")
@@ -350,9 +356,7 @@ def copy_environment(
     target: str,
 ) -> None:
     """Copy an existing environment to a new one."""
-    raise click.exceptions.Exit(
-        get_env_commands().copy_environment(source, target)
-    )
+    raise click.exceptions.Exit(get_env_commands().copy_environment(source, target))
 
 
 if __name__ == "__main__":

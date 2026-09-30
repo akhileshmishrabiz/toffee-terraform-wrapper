@@ -24,9 +24,9 @@ resource "aws_s3_bucket" "secondary" {
 # Set up replication if enabled
 resource "aws_s3_bucket_replication_configuration" "replication" {
   count = var.enable_replication ? 1 : 0
-  
+
   provider = aws.primary
-  
+
   # Must have bucket versioning enabled first
   depends_on = [aws_s3_bucket_versioning.primary]
 
@@ -35,9 +35,9 @@ resource "aws_s3_bucket_replication_configuration" "replication" {
 
   rule {
     id = "entire-bucket"
-    
+
     status = "Enabled"
-    
+
     destination {
       bucket        = aws_s3_bucket.secondary.arn
       storage_class = "STANDARD"
@@ -48,7 +48,7 @@ resource "aws_s3_bucket_replication_configuration" "replication" {
 resource "aws_s3_bucket_versioning" "primary" {
   provider = aws.primary
   bucket   = aws_s3_bucket.primary.id
-  
+
   versioning_configuration {
     status = "Enabled"
   }
@@ -57,7 +57,7 @@ resource "aws_s3_bucket_versioning" "primary" {
 resource "aws_s3_bucket_versioning" "secondary" {
   provider = aws.secondary
   bucket   = aws_s3_bucket.secondary.id
-  
+
   versioning_configuration {
     status = "Enabled"
   }
@@ -66,7 +66,7 @@ resource "aws_s3_bucket_versioning" "secondary" {
 # IAM role for replication
 resource "aws_iam_role" "replication" {
   count = var.enable_replication ? 1 : 0
-  
+
   provider = aws.primary
   name     = "${var.project_name}-${var.environment}-replication"
 
@@ -87,10 +87,10 @@ resource "aws_iam_role" "replication" {
 # IAM policy for replication
 resource "aws_iam_policy" "replication" {
   count = var.enable_replication ? 1 : 0
-  
+
   provider = aws.primary
   name     = "${var.project_name}-${var.environment}-replication-policy"
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -133,7 +133,7 @@ resource "aws_iam_policy" "replication" {
 # Attach the policy to the role
 resource "aws_iam_role_policy_attachment" "replication" {
   count = var.enable_replication ? 1 : 0
-  
+
   provider   = aws.primary
   role       = aws_iam_role.replication[0].name
   policy_arn = aws_iam_policy.replication[0].arn

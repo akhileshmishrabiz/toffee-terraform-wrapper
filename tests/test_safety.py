@@ -10,9 +10,7 @@ def test_default_protected_environment_names_are_case_insensitive():
 
 
 def test_describe_s3_backend(tmp_path):
-    (tmp_path / "main.tf").write_text(
-        'terraform {\n  backend "s3" {}\n}\n'
-    )
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "s3" {}\n}\n')
     backend_file = tmp_path / "prod.tfbackend"
     backend_file.write_text(
         'bucket = "company-tf-state"\n'
@@ -27,9 +25,7 @@ def test_describe_s3_backend(tmp_path):
 
 
 def test_backend_summary_does_not_expose_unrecognized_values(tmp_path):
-    (tmp_path / "main.tf").write_text(
-        'terraform {\n  backend "custom" {}\n}\n'
-    )
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "custom" {}\n}\n')
     backend_file = tmp_path / "prod.tfbackend"
     backend_file.write_text('password = "do-not-print"\n')
 
@@ -40,9 +36,7 @@ def test_backend_summary_does_not_expose_unrecognized_values(tmp_path):
 
 
 def test_backend_summary_does_not_expose_credentials(tmp_path):
-    (tmp_path / "main.tf").write_text(
-        'terraform {\n  backend "s3" {}\n}\n'
-    )
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "s3" {}\n}\n')
     backend_file = tmp_path / "prod.tfbackend"
     backend_file.write_text(
         'bucket = "company-tf-state"\n'
@@ -61,9 +55,7 @@ def test_backend_summary_does_not_expose_credentials(tmp_path):
 
 
 def test_backend_summary_filters_control_and_format_characters(tmp_path):
-    (tmp_path / "main.tf").write_text(
-        'terraform {\n  backend "s3" {}\n}\n'
-    )
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "s3" {}\n}\n')
     backend_file = tmp_path / "prod.tfbackend"
     backend_file.write_text(
         'bucket = "company\x1b[31m-state"\nkey = "a\u202eb\x9bc/\\u001b"\n'
@@ -91,8 +83,7 @@ def test_backend_label_may_be_unquoted_and_comments_are_ignored(tmp_path):
     backend_file.write_text('bucket = "state"\nkey = "prod.tfstate"\n')
 
     assert (
-        describe_backend(str(tmp_path), str(backend_file))
-        == "s3://state/prod.tfstate"
+        describe_backend(str(tmp_path), str(backend_file)) == "s3://state/prod.tfstate"
     )
 
 

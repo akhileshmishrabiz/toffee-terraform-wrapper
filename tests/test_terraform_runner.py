@@ -134,14 +134,14 @@ class TestTerraformRunner:
 
     def test_global_args_are_before_command(self):
         env = self._make_env()
-        cmd = self.runner.build_command(
-            "plan", env, global_args=["-compact-warnings"]
-        )
+        cmd = self.runner.build_command("plan", env, global_args=["-compact-warnings"])
         assert cmd == ["/usr/bin/terraform", "-compact-warnings", "plan", VARS]
 
     def test_non_interactive_adds_input_false(self):
         env = self._make_env()
-        cmd = self.runner.build_command("apply", env, ["-auto-approve"], non_interactive=True)
+        cmd = self.runner.build_command(
+            "apply", env, ["-auto-approve"], non_interactive=True
+        )
         assert cmd == [
             "/usr/bin/terraform",
             "apply",
@@ -152,7 +152,9 @@ class TestTerraformRunner:
 
     def test_non_interactive_respects_user_input_flag(self):
         env = self._make_env()
-        cmd = self.runner.build_command("plan", env, ["-input=true"], non_interactive=True)
+        cmd = self.runner.build_command(
+            "plan", env, ["-input=true"], non_interactive=True
+        )
         assert "-input=false" not in cmd
 
     def test_non_interactive_skips_commands_without_input_flag(self):

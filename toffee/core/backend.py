@@ -114,6 +114,35 @@ def read_settings(path: str) -> Dict[str, object]:
         raise BackendError(f"cannot read {path}: {e}") from e
 
 
+def backend_config_overrides(args: List[str], root_dir: str) -> Dict[str, object]:
+    """Load Terraform init -backend-config values in command-line order."""
+    merged: Dict[str, object] = {}
+    index = 0
+    while index < len(args):
+        argument = args[index]
+        value = None
+        for prefix in ("-backend-config=", "--backend-config="):
+            if argument.startswith(prefix):
+                value = argument[len(prefix) :]
+                break
+        if argument in ("-backend-config", "--backend-config"):
+            if index + 1 >= len(args):
+                raise BackendError("-backend-config requires a value")
+            index += 1
+            value = args[index]
+        if value is not None:
+            key, separator, setting = value.partition("=")
+            if separator:
+                if not key.strip():
+                    raise BackendError("-backend-config has an empty setting name")
+                merged[key.strip()] = setting
+            else:
+                path = value if os.path.isabs(value) else os.path.join(root_dir, value)
+                merged.update(read_settings(path))
+        index += 1
+    return merged
+
+
 def settings_from_text(text: str) -> Dict[str, object]:
     settings: Dict[str, object] = {}
     for item in hcl.parse(text):
@@ -274,9 +303,7 @@ def _hcl_backends(path: str) -> List[Backend]:
                 backend_type = "cloud"
             else:
                 continue
-            backends.append(
-                Backend(backend_type, settings_from_text(nested.raw), path)
-            )
+            backends.append(Backend(backend_type, settings_from_text(nested.raw), path))
     return backends
 
 
@@ -292,9 +319,7 @@ def _json_backends(path: str) -> List[Backend]:
         for backend in _as_list(block.get("backend")):
             if isinstance(backend, dict):
                 for backend_type, config in backend.items():
-                    backends.append(
-                        Backend(backend_type, _json_settings(config), path)
-                    )
+                    backends.append(Backend(backend_type, _json_settings(config), path))
         for cloud in _as_list(block.get("cloud")):
             backends.append(Backend("cloud", _json_settings(cloud), path))
     return backends

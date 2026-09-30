@@ -12,7 +12,9 @@ from ..core.placeholders import PLACEHOLDER, placeholder_keys
 from ..core.safety import describe_backend
 from ..core.terraform import (
     bool_flag,
+    first_positional,
     flag_value,
+    help_requested,
     saved_plan_path,
     split_flag,
     working_directory,
@@ -141,7 +143,7 @@ class TerraformCommands(BaseCommand):
                 verified, problem = self._verify_saved_plan(saved_plan, env_names[0])
                 if not verified and problem is None:
                     return False
-                if problem and self._project_has_protected_environment():
+                if problem:
                     notes.append(
                         "The origin of saved plan "
                         f"{printable(self.display_path(saved_plan))} cannot be "
@@ -299,11 +301,6 @@ class TerraformCommands(BaseCommand):
                 highlight=False,
             )
 
-    def _project_has_protected_environment(self) -> bool:
-        return any(
-            self.is_protected(name) for name in self.env_manager.get_environment_names()
-        )
-
     @staticmethod
     def _plan_succeeded(code: int, args: List[str]) -> bool:
         return code == 0 or (code == 2 and bool(bool_flag(args, "detailed-exitcode")))
@@ -323,10 +320,13 @@ class TerraformCommands(BaseCommand):
 
     @staticmethod
     def _changes_state(command_name: str, args: List[str]) -> bool:
+        if help_requested([command_name, *args]):
+            return False
         if command_name in STATE_CHANGING_COMMANDS:
             return True
         subcommands = STATE_CHANGING_SUBCOMMANDS.get(command_name)
-        return bool(subcommands and args and args[0] in subcommands)
+        index = first_positional(args)
+        return bool(subcommands and index is not None and args[index] in subcommands)
 
     def _describe_action(self, command_name: str, args: List[str]) -> str:
         if self._destroys(command_name, args):
@@ -334,5 +334,7 @@ class TerraformCommands(BaseCommand):
         if command_name == "apply":
             return "apply changes to"
         if command_name in STATE_CHANGING_SUBCOMMANDS:
-            return f"run 'terraform {command_name} {args[0]}' against"
+            index = first_positional(args)
+            subcommand = args[index] if index is not None else ""
+            return f"run 'terraform {command_name} {subcommand}' against"
         return f"run 'terraform {command_name}' against"

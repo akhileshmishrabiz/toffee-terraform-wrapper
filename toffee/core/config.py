@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .environment import EnvironmentManager
+
 DEFAULT_CONFIG = {
     "vars_dir": "vars",
     "terraform_path": "terraform",
@@ -31,6 +33,11 @@ class ConfigError(ValueError):
 
 def validate_value(key: str, value: Any) -> Optional[str]:
     """Return why a value is invalid for a known setting, or None."""
+    if key not in DEFAULT_CONFIG:
+        return (
+            f"unknown configuration key {key!r}; valid keys are: "
+            f"{', '.join(DEFAULT_CONFIG)}"
+        )
     default = DEFAULT_CONFIG.get(key)
     if isinstance(default, bool):
         if not isinstance(value, bool):
@@ -40,6 +47,14 @@ def validate_value(key: str, value: Any) -> Optional[str]:
             isinstance(item, str) and item for item in value
         ):
             return f"{key} must be a list of environment names"
+        folded = set()
+        for item in value:
+            valid, _problem = EnvironmentManager.validate_env_name(item)
+            if not valid:
+                return f"{key} contains invalid environment name {item!r}"
+            if item.casefold() in folded:
+                return f"{key} contains duplicate environment name {item!r}"
+            folded.add(item.casefold())
     elif isinstance(default, str):
         if not isinstance(value, str) or not value.strip():
             return f"{key} must be a non-empty string"
@@ -63,6 +78,21 @@ def untrusted_terraform_path_error(value: str) -> str:
         "executable or path in ~/.toffee/config.json or the "
         f"{TERRAFORM_PATH_VARIABLE} environment variable."
     )
+
+
+def project_vars_dir_error(project_dir: str, value: str) -> Optional[str]:
+    """Reject project-controlled environment paths outside the project."""
+    if os.path.isabs(value):
+        return f"{PROJECT_CONFIG_NAME} vars_dir must be relative to the project"
+    project_real = os.path.realpath(project_dir)
+    target_real = os.path.realpath(os.path.join(project_dir, value))
+    try:
+        inside = os.path.commonpath([project_real, target_real]) == project_real
+    except ValueError:
+        inside = False
+    if not inside:
+        return f"{PROJECT_CONFIG_NAME} vars_dir {value!r} resolves outside the project"
+    return None
 
 
 def read_config_file(path: str) -> Dict[str, Any]:
@@ -143,10 +173,17 @@ class Config:
         if project_dir is None:
             project_dir = os.getcwd()
 
-        project_config = read_config_file(os.path.join(project_dir, PROJECT_CONFIG_NAME))
+        project_config = read_config_file(
+            os.path.join(project_dir, PROJECT_CONFIG_NAME)
+        )
         terraform_path = project_config.get("terraform_path")
         if terraform_path is not None and not is_project_terraform_name(terraform_path):
             raise ConfigError(untrusted_terraform_path_error(terraform_path))
+        vars_dir = project_config.get("vars_dir")
+        if vars_dir is not None:
+            problem = project_vars_dir_error(project_dir, vars_dir)
+            if problem:
+                raise ConfigError(problem)
 
         merged = {**self.config, **project_config}
         self.sources = {

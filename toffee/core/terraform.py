@@ -53,6 +53,12 @@ STATELESS_SUBCOMMANDS = {"providers": frozenset({"lock", "mirror"})}
 HELP_FLAGS = frozenset({"-h", "-help", "--help"})
 
 
+def help_requested(args: Sequence[str]) -> bool:
+    """Return whether Terraform will print help instead of running."""
+    before_separator = args[: args.index("--")] if "--" in args else args
+    return bool(HELP_FLAGS.intersection(before_separator))
+
+
 def uses_state(
     command_name: str, args: Sequence[str], global_args: Sequence[str] = ()
 ) -> bool:
@@ -60,7 +66,7 @@ def uses_state(
     argv = [*global_args, command_name, *args]
     if "--" in argv:
         argv = argv[: argv.index("--")]
-    if HELP_FLAGS.intersection(argv):
+    if help_requested(argv):
         return False
     if command_name in STATELESS_COMMANDS:
         return False
