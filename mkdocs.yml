@@ -1,0 +1,73 @@
+site_name: Toffee
+site_description: A safe, environment-first Terraform wrapper
+site_url: https://akhileshmishrabiz.github.io/toffee-terraform-wrapper/
+repo_url: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper
+repo_name: akhileshmishrabiz/toffee-terraform-wrapper
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: assets/toffee-mark.svg
+  favicon: assets/toffee-mark.svg
+  font: false
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: brown
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Use dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: brown
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Use light mode
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Installation: getting-started.md
+      - Environments: environments.md
+  - Reference:
+      - Commands: commands.md
+      - Configuration: configuration.md
+  - Safety: safety.md
+  - Help:
+      - Troubleshooting: troubleshooting.md
+      - Contributing: contributing.md
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper
+      name: Toffee on GitHub
+  generator: false
+
+copyright: Copyright &copy; 2026 Akhilesh Mishra · MIT licensed

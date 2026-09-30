@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Add a polished MkDocs Material documentation site with local, sanitized CLI
+  illustrations, strict documentation tests, and a GitHub Pages workflow that
+  builds pull requests and deploys from `main` after Pages is enabled.
+
 ## [1.0.0] - 2026-09-30
 
 ### Added

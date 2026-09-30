@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Toffee mark</title>
+  <desc id="desc">Three caramel environment layers above a protective shield</desc>
+  <defs>
+    <linearGradient id="caramel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f1ad55"/>
+      <stop offset="1" stop-color="#9c4314"/>
+    </linearGradient>
+  </defs>
+  <path d="M128 18 222 61 128 104 34 61Z" fill="#ffd18b" stroke="#6d3215" stroke-width="9" stroke-linejoin="round"/>
+  <path d="m34 91 94 43 94-43v28l-94 43-94-43Z" fill="url(#caramel)" stroke="#6d3215" stroke-width="9" stroke-linejoin="round"/>
+  <path d="m34 143 94 43 94-43v28l-94 43-94-43Z" fill="#b75a20" stroke="#6d3215" stroke-width="9" stroke-linejoin="round"/>
+  <path d="M128 116c19 13 35 17 49 19v37c0 31-20 51-49 66-29-15-49-35-49-66v-37c14-2 30-6 49-19Z" fill="#fff8ed" stroke="#6d3215" stroke-width="9" stroke-linejoin="round"/>
+  <path d="m105 174 15 15 32-38" fill="none" stroke="#a94f16" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

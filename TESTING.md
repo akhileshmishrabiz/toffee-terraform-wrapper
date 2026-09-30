@@ -18,6 +18,19 @@ ruff check .
 ruff format --check .
 ```
 
+## Documentation
+
+Install the docs-only dependencies and run the same strict build used by the
+Pages workflow:
+
+```bash
+python -m pip install -r requirements-docs.txt
+mkdocs build --strict --site-dir site
+```
+
+For local preview, run `mkdocs serve`. The generated `site/` directory is
+ignored and must not be committed.
+
 ## Test structure
 
 - `tests/test_cli.py` covers the environment-first CLI, passthrough arguments,
@@ -49,6 +62,9 @@ ruff format --check .
   a provider-free local backend.
 - `tests/test_release.py` prevents the documented install/quick-start commands,
   complete internal help surface, and 1.0 version claims from drifting.
+- `tests/test_docs.py` checks documentation navigation and local links, CLI
+  examples, required safety guidance, responsive CSS, and self-contained SVG
+  assets.
 
 An autouse fixture gives every test a temporary `HOME` and clears
 `TOFFEE_TERRAFORM_PATH`, `TF_WORKSPACE`, and `TF_DATA_DIR`, so a developer's

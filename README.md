@@ -5,6 +5,7 @@ Terraform commands and arguments while automatically selecting each
 environment's variable file, backend settings, and local Terraform data
 directory. This makes `dev`, `staging`, and `prod` explicit without Terraform
 workspaces or repeated `-var-file` and `-backend-config` flags.
+
 The current version is 1.0.0.
 
 ```bash
@@ -348,6 +349,10 @@ terraform fmt -check -recursive
 The real Terraform tests adapt a generated scaffold to a local backend so they
 can validate and plan without downloading the AWS provider. See the
 [testing guide](TESTING.md) for details.
+
+The documentation source is in `docs/`. After you set GitHub Pages to use
+GitHub Actions, it publishes to
+[akhileshmishrabiz.github.io/toffee-terraform-wrapper](https://akhileshmishrabiz.github.io/toffee-terraform-wrapper/).
 
 Release history is in the [changelog](CHANGELOG.md). Planned work is in the
 [roadmap](ROADMAP.md).

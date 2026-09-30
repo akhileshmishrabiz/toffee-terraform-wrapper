@@ -1,0 +1,35 @@
+<!-- Output captured from Toffee 1.0.0 with a temporary HOME; only the neutral shell prompt was added. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Terminal output from toffee new service</title>
+  <desc id="desc">Toffee creates eleven files and prints three next steps</desc>
+  <rect width="1200" height="720" rx="22" fill="#17130f"/>
+  <path d="M22 0h1156a22 22 0 0 1 22 22v54H0V22A22 22 0 0 1 22 0Z" fill="#2c241e"/>
+  <circle cx="38" cy="38" r="10" fill="#f26d5b"/>
+  <circle cx="70" cy="38" r="10" fill="#eab14d"/>
+  <circle cx="102" cy="38" r="10" fill="#62bd68"/>
+  <text x="600" y="46" text-anchor="middle" fill="#d8cfc6" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">toffee - project setup</text>
+  <text x="38" y="112" fill="#f7eadb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21">
+    <tspan x="38" dy="0" fill="#f1ad55">$ toffee new service</tspan>
+    <tspan x="38" dy="38">Created 11 files for project service:</tspan>
+    <tspan x="38" dy="38"></tspan>
+    <tspan x="38" dy="38">service/</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; modules/</tspan>
+    <tspan x="38" dy="30">&#x2502;   &#x2514;&#x2500;&#x2500; .gitkeep</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; main.tf</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; outputs.tf</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; variables.tf</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; versions.tf</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; providers.tf</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; data.tf</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; vars/</tspan>
+    <tspan x="38" dy="30">&#x2502;   &#x251C;&#x2500;&#x2500; dev.tfvars</tspan>
+    <tspan x="38" dy="30">&#x2502;   &#x2514;&#x2500;&#x2500; dev.tfbackend</tspan>
+    <tspan x="38" dy="30">&#x251C;&#x2500;&#x2500; .toffee.json</tspan>
+    <tspan x="38" dy="30">&#x2514;&#x2500;&#x2500; .gitignore</tspan>
+    <tspan x="650" y="150" fill="#f1ad55">Next steps:</tspan>
+    <tspan x="650" dy="42">1. Replace CHANGE-ME in</tspan>
+    <tspan x="682" dy="30">service/vars/dev.tfbackend (bucket)</tspan>
+    <tspan x="650" dy="42">2. cd service &amp;&amp; toffee dev init</tspan>
+    <tspan x="650" dy="42">3. toffee dev plan</tspan>
+  </text>
+</svg>
