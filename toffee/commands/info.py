@@ -6,10 +6,12 @@ import subprocess
 
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from .. import __version__
+from ..core.text import printable
 from .base import BaseCommand
 
 console = Console()
@@ -37,14 +39,18 @@ class InfoCommands(BaseCommand):
             result = subprocess.run(
                 [self.terraform.terraform_path, "-version"],
                 capture_output=True,
-                text=True,
                 check=False,
             )
             if result.returncode == 0:
-                for line in result.stdout.splitlines():
-                    if "Terraform v" in line:
-                        terraform_version = line.strip()
-                        break
+                output = result.stdout.decode("utf-8", errors="replace")
+                terraform_version = next(
+                    (
+                        printable(line.strip())
+                        for line in output.splitlines()
+                        if line.strip()
+                    ),
+                    "Unknown",
+                )
         except OSError:
             pass
 
@@ -53,7 +59,7 @@ class InfoCommands(BaseCommand):
         table.add_column("Version", style="green")
 
         table.add_row("Toffee", toffee_version)
-        table.add_row("Terraform", terraform_version)
+        table.add_row("Terraform/OpenTofu", terraform_version)
 
         console.print(table)
         return 0
@@ -68,8 +74,8 @@ class InfoCommands(BaseCommand):
         console.print(
             Panel(
                 f"[bold cyan]Environment:[/] {env_name}\n\n"
-                f"[bold]Vars File:[/] {env.vars_file}\n"
-                f"[bold]Backend File:[/] {env.backend_file}",
+                f"[bold]Vars File:[/] {escape(printable(env.vars_file))}\n"
+                f"[bold]Backend File:[/] {escape(printable(env.backend_file))}",
                 title=f"Environment: {env_name}",
                 style="blue",
                 box=box.ROUNDED,

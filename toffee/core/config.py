@@ -3,68 +3,162 @@ Configuration management for the Toffee CLI tool
 """
 
 import json
-import logging
 import os
+import re
+import tempfile
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from .environment import EnvironmentManager
 
 DEFAULT_CONFIG = {
     "vars_dir": "vars",
     "terraform_path": "terraform",
     "verbose": False,
     "auto_approve": False,
+    "protected_environments": [],
 }
 
-logger = logging.getLogger(__name__)
+PROJECT_CONFIG_NAME = ".toffee.json"
+TERRAFORM_PATH_VARIABLE = "TOFFEE_TERRAFORM_PATH"
+PROJECT_TERRAFORM_NAMES = ("terraform", "tofu", "opentofu")
+_PROJECT_TERRAFORM_NAME = re.compile(
+    "(?:" + "|".join(PROJECT_TERRAFORM_NAMES) + r")(?:-?[0-9]+(?:\.[0-9]+)*)?"
+)
+
+
+class ConfigError(ValueError):
+    """Raised when configuration is invalid and guessing would be unsafe."""
+
+
+def validate_value(key: str, value: Any) -> Optional[str]:
+    """Return why a value is invalid for a known setting, or None."""
+    if key not in DEFAULT_CONFIG:
+        return (
+            f"unknown configuration key {key!r}; valid keys are: "
+            f"{', '.join(DEFAULT_CONFIG)}"
+        )
+    default = DEFAULT_CONFIG.get(key)
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            return f"{key} must be true or false"
+    elif isinstance(default, list):
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item for item in value
+        ):
+            return f"{key} must be a list of environment names"
+        folded = set()
+        for item in value:
+            valid, _problem = EnvironmentManager.validate_env_name(item)
+            if not valid:
+                return f"{key} contains invalid environment name {item!r}"
+            if item.casefold() in folded:
+                return f"{key} contains duplicate environment name {item!r}"
+            folded.add(item.casefold())
+    elif isinstance(default, str):
+        if not isinstance(value, str) or not value.strip():
+            return f"{key} must be a non-empty string"
+    return None
+
+
+def is_project_terraform_name(value: str) -> bool:
+    """Return whether a project may choose this Terraform executable.
+
+    Any other name could be an interpreter such as ``sh`` that runs a file
+    from the repository in place of Terraform.
+    """
+    return _PROJECT_TERRAFORM_NAME.fullmatch(value) is not None
+
+
+def untrusted_terraform_path_error(value: str) -> str:
+    return (
+        f"{PROJECT_CONFIG_NAME} sets terraform_path to {value!r}. A project can "
+        f"only choose {', '.join(PROJECT_TERRAFORM_NAMES)}, optionally with a "
+        "version suffix such as terraform1.9, looked up on PATH. Set any other "
+        "executable or path in ~/.toffee/config.json or the "
+        f"{TERRAFORM_PATH_VARIABLE} environment variable."
+    )
+
+
+def project_vars_dir_error(project_dir: str, value: str) -> Optional[str]:
+    """Reject project-controlled environment paths outside the project."""
+    if os.path.isabs(value):
+        return f"{PROJECT_CONFIG_NAME} vars_dir must be relative to the project"
+    project_real = os.path.realpath(project_dir)
+    target_real = os.path.realpath(os.path.join(project_dir, value))
+    try:
+        inside = os.path.commonpath([project_real, target_real]) == project_real
+    except ValueError:
+        inside = False
+    if not inside:
+        return f"{PROJECT_CONFIG_NAME} vars_dir {value!r} resolves outside the project"
+    return None
+
+
+def read_config_file(path: str) -> Dict[str, Any]:
+    """Read and validate a configuration file; a missing file is empty."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as config_file:
+            values = json.load(config_file)
+    except (OSError, UnicodeDecodeError) as e:
+        raise ConfigError(f"cannot read {path}: {e}") from e
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"{path} is not valid JSON ({e}); fix or remove it") from e
+    if not isinstance(values, dict):
+        raise ConfigError(f"{path} must contain a JSON object")
+    for key, value in values.items():
+        problem = validate_value(key, value)
+        if problem:
+            raise ConfigError(f"{path}: {problem}")
+    return values
+
+
+def write_config_file(path: str, values: Dict[str, Any]) -> None:
+    """Replace a configuration file atomically; raises ConfigError on failure."""
+    directory = os.path.dirname(os.path.abspath(path))
+    try:
+        os.makedirs(directory, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=directory, suffix=".tmp")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as config_file:
+                json.dump(values, config_file, indent=2)
+                config_file.write("\n")
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+    except OSError as e:
+        raise ConfigError(f"cannot write {path}: {e}") from e
 
 
 class Config:
     """Manages Toffee configuration"""
 
     def __init__(self):
-        self.config_dir = self._get_config_dir()
+        self.config_dir = os.path.join(str(Path.home()), ".toffee")
         self.config_file = os.path.join(self.config_dir, "config.json")
-        self.config = self._load_config()
+        self.global_values = read_config_file(self.config_file)
+        self.config = {**DEFAULT_CONFIG, **self.global_values}
+        self.sources: Dict[str, str] = {}
 
-    def _get_config_dir(self) -> str:
-        """Get the configuration directory, creating it if it doesn't exist"""
-        config_dir = os.path.join(str(Path.home()), ".toffee")
-        os.makedirs(config_dir, exist_ok=True)
-        return config_dir
-
-    def _load_config(self) -> Dict[str, Any]:
-        """Load the configuration from disk"""
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "r") as f:
-                    config = json.load(f)
-                # Merge with defaults to ensure all keys exist
-                return {**DEFAULT_CONFIG, **config}
-            except (OSError, json.JSONDecodeError) as e:
-                # If there's any error, fall back to defaults
-                logger.warning(f"Error loading config file: {e}")
-                return DEFAULT_CONFIG.copy()
-        else:
-            return DEFAULT_CONFIG.copy()
-
-    def save_config(self) -> bool:
-        """Save the current configuration to disk"""
-        try:
-            with open(self.config_file, "w") as f:
-                json.dump(self.config, f, indent=2)
-            return True
-        except OSError as e:
-            logger.error(f"Error saving config file: {e}")
-            return False
+    def save_config(self) -> None:
+        """Save explicitly set global values; raises ConfigError on failure."""
+        write_config_file(self.config_file, self.global_values)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value"""
         return self.config.get(key, default)
 
-    def set(self, key: str, value: Any) -> bool:
-        """Set a configuration value"""
+    def set(self, key: str, value: Any) -> None:
+        """Set and save a global configuration value."""
+        problem = validate_value(key, value)
+        if problem:
+            raise ConfigError(problem)
+        self.global_values = {**self.global_values, key: value}
         self.config[key] = value
-        return self.save_config()
+        self.save_config()
 
     def get_project_config(self, project_dir: str = None) -> Dict[str, Any]:
         """
@@ -79,16 +173,39 @@ class Config:
         if project_dir is None:
             project_dir = os.getcwd()
 
-        project_config_file = os.path.join(project_dir, ".toffee.json")
-        project_config = {}
+        project_config = read_config_file(
+            os.path.join(project_dir, PROJECT_CONFIG_NAME)
+        )
+        terraform_path = project_config.get("terraform_path")
+        if terraform_path is not None and not is_project_terraform_name(terraform_path):
+            raise ConfigError(untrusted_terraform_path_error(terraform_path))
+        vars_dir = project_config.get("vars_dir")
+        if vars_dir is not None:
+            problem = project_vars_dir_error(project_dir, vars_dir)
+            if problem:
+                raise ConfigError(problem)
 
-        if os.path.exists(project_config_file):
-            try:
-                with open(project_config_file, "r") as f:
-                    project_config = json.load(f)
-            except (OSError, json.JSONDecodeError) as e:
-                # If there's any error, ignore the project config
-                logger.warning(f"Error reading project config: {e}")
+        merged = {**self.config, **project_config}
+        self.sources = {
+            key: "Project"
+            if key in project_config
+            else "Global"
+            if key in self.global_values
+            else "Default"
+            for key in merged
+        }
 
-        # Project config overrides global config
-        return {**self.config, **project_config}
+        environment_path = os.environ.get(TERRAFORM_PATH_VARIABLE)
+        if environment_path:
+            merged["terraform_path"] = environment_path
+            self.sources["terraform_path"] = "Environment"
+
+        # A project can add protected names but never remove global ones.
+        protected = []
+        for names in (
+            self.global_values.get("protected_environments", []),
+            project_config.get("protected_environments", []),
+        ):
+            protected.extend(name for name in names if name not in protected)
+        merged["protected_environments"] = protected
+        return merged

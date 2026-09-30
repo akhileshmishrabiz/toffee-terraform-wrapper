@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 
 class TestCLI:
     def test_version(self, invoke):
@@ -15,9 +17,15 @@ class TestCLI:
         assert "dev" in result.stdout
         assert "staging" in result.stdout
 
-    def test_diff_shows_variable_and_backend_changes(
-        self, invoke, mock_terraform_log
-    ):
+    def test_info_version_reports_configured_terraform_cli(self, invoke):
+        result = invoke("info", "version")
+
+        assert result.exit_code == 0
+        assert "Toffee" in result.stdout
+        assert "Terraform/OpenTofu" in result.stdout
+        assert "Terraform v1.5.7" in result.stdout
+
+    def test_diff_shows_variable_and_backend_changes(self, invoke, mock_terraform_log):
         result = invoke("diff", "dev", "prod")
 
         assert result.exit_code == 0
@@ -64,6 +72,98 @@ class TestCLI:
         assert result.exit_code == 1
         assert "not found" in result.stderr.lower()
 
+    def test_diff_redacts_composites_with_sensitive_nested_keys(
+        self, invoke, project_dir
+    ):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_text(
+            'db = {\n  host = "dev-db"\n  password = "dev-pw"\n}\n'
+            'db_pass = "dev-pass"\n'
+            'dsn = "postgres://u:dev-url-pw@db/app"\n'
+        )
+        (project / "vars" / "prod.tfvars").write_text(
+            'db = { host = "prod-db", password = "prod-pw" }\n'
+            'db_pass = "prod-pass"\n'
+            'url = "postgres://u:prod-url-pw@db/app"\n'
+        )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        for secret in ("dev-pw", "prod-pw", "dev-pass", "prod-pass", "url-pw"):
+            assert secret not in result.stdout
+        assert result.stdout.count("<redacted>") == 6
+
+    def test_diff_filters_control_and_bidi_characters(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_text(
+            'label = "a\x1b[2Jb\u202ec\x85d"\n'
+        )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert not any(character in result.stdout for character in "\x1b\u202e\x85")
+        assert "a\ufffd[2Jb\ufffdc\ufffdd" in result.stdout
+
+    def test_diff_detects_heredoc_differences(self, invoke, project_dir):
+        project, _, _ = project_dir
+        for env in ("dev", "prod"):
+            (project / "vars" / f"{env}.tfvars").write_text(
+                f'script = <<EOF\necho {env}\nregion = "x"\nEOF\n'
+            )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert "script" in result.stdout
+        assert "region" not in result.stdout.replace('region = "x"', "")
+
+    def test_diff_exit_code_option(self, invoke):
+        different = invoke("diff", "dev", "prod", "--exit-code")
+        same = invoke("diff", "dev", "dev", "--exit-code")
+        missing = invoke("diff", "dev", "missing", "--exit-code")
+
+        assert different.exit_code == 1
+        assert same.exit_code == 0
+        assert missing.exit_code == 2
+
+    def test_diff_reports_unreadable_files_cleanly(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_bytes(b'region = "\xff\xfe"\n')
+        (project / "vars" / "prod.tfvars").write_text("tags = {\n")
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 1
+        assert "Cannot read vars/dev.tfvars" in result.stderr
+        assert "Traceback" not in result.output
+
+    def test_diff_reports_unterminated_block(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "prod.tfvars").write_text('tags = {\n  a = "b"\n')
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 1
+        assert "unterminated value for 'tags'" in result.stderr
+
+    def test_diff_reports_missing_value_as_parse_error(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "prod.tfvars").write_text('environment = "prod"\nx = \n')
+
+        result = invoke("diff", "dev", "prod", "--exit-code")
+        default = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 2
+        assert (
+            "Error: Cannot parse vars/prod.tfvars: missing value for 'x' on line 2"
+            in result.stderr
+        )
+        assert "differences" not in result.stdout
+        assert default.exit_code == 1
+        assert "Traceback" not in default.output
+
     def test_plan_single_env(self, invoke, mock_terraform_log):
         result = invoke("dev", "plan")
         assert result.exit_code == 0
@@ -87,6 +187,13 @@ class TestCLI:
         log = mock_terraform_log.read_text()
         assert log.count("plan") == 1
 
+    def test_case_variant_targets_are_rejected(self, invoke, mock_terraform_log):
+        result = invoke("dev,DEV", "plan")
+
+        assert result.exit_code == 2
+        assert "unique ignoring letter case" in result.stderr
+        assert mock_terraform_log.read_text() == ""
+
     def test_init_includes_backend_config(self, invoke, mock_terraform_log):
         result = invoke("dev", "init")
         assert result.exit_code == 0
@@ -108,8 +215,7 @@ class TestCLI:
         assert "apply changes to PROD" in result.stderr
         assert "Environment: prod" in result.stderr
         assert (
-            "Backend: local://.terraform-state/prod/terraform.tfstate"
-            in result.stderr
+            "Backend: local://.terraform-state/prod/terraform.tfstate" in result.stderr
         )
         assert mock_terraform_log.read_text() == ""
 
@@ -124,9 +230,7 @@ class TestCLI:
     def test_project_auto_approve_does_not_bypass_prod_confirmation(
         self, invoke, mock_terraform_log
     ):
-        config_result = invoke(
-            "config", "set", "auto_approve", "true", "--project"
-        )
+        config_result = invoke("config", "set", "auto_approve", "true", "--project")
         assert config_result.exit_code == 0
 
         result = invoke("prod", "apply", input="n\n")
@@ -170,12 +274,17 @@ class TestCLI:
 
     def test_environment_is_required(self, invoke):
         result = invoke("plan")
-        assert result.exit_code != 0
+        assert result.exit_code == 2
+        assert (
+            "Missing Terraform command after environment target 'plan'" in result.stderr
+        )
 
     def test_missing_environment_fails(self, invoke):
         result = invoke("missing", "plan")
         assert result.exit_code == 1
-        assert "not found" in result.stdout.lower() or "not found" in result.stderr.lower()
+        assert (
+            "not found" in result.stdout.lower() or "not found" in result.stderr.lower()
+        )
 
     def test_env_create(self, invoke, project_dir):
         project, _, _ = project_dir
@@ -188,6 +297,46 @@ class TestCLI:
         result = invoke("env", "create", "../bad")
         assert result.exit_code == 1
 
+    def test_new_is_a_command_not_an_environment(self, invoke, mock_terraform_log):
+        result = invoke("new", "--envs", "qa", "--dry-run")
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.startswith("Would create 3 files")
+        assert mock_terraform_log.read_text() == ""
+
+    def test_env_create_rejects_reserved_new(self, invoke, project_dir):
+        project, _, _ = project_dir
+        result = invoke("env", "create", "new")
+
+        assert result.exit_code == 1
+        assert "reserved" in result.stderr
+        assert not (project / "vars" / "new.tfvars").exists()
+
+    def test_new_adds_an_environment_to_an_existing_project(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+
+        main_tf = (project / "main.tf").read_text()
+
+        result = invoke("new", "--envs", "qa")
+        plan = invoke("qa", "plan")
+
+        assert result.exit_code == 0, result.output
+        assert "no .tf files were added" in result.stdout
+        assert sorted(path.name for path in project.glob("*.tf")) == ["main.tf"]
+        assert (project / "main.tf").read_text() == main_tf
+        assert not (project / "modules").exists()
+        # The root module declares only `environment`, so only it is set.
+        assert (project / "vars" / "qa.tfvars").read_text() == 'environment = "qa"\n'
+        assert (
+            (project / "vars" / "qa.tfbackend")
+            .read_text()
+            .endswith('path = "state/qa/terraform.tfstate"\n')
+        )
+        assert plan.exit_code == 0, plan.output
+        assert "qa.tfvars" in mock_terraform_log.read_text()
+
     def test_env_copy(self, invoke, project_dir):
         project, _, _ = project_dir
         result = invoke("env", "copy", "dev", "qa")
@@ -195,6 +344,34 @@ class TestCLI:
         assert (project / "vars" / "qa.tfvars").is_file()
         content = (project / "vars" / "qa.tfvars").read_text()
         assert 'environment = "qa"' in content or "qa" in content
+
+    def test_env_copy_refuses_incomplete_source(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfbackend").unlink()
+
+        result = invoke("env", "copy", "dev", "qa")
+
+        assert result.exit_code == 1
+        assert "incomplete" in result.stderr
+        assert not (project / "vars" / "qa.tfvars").exists()
+
+    @pytest.mark.parametrize("command", [["copy", "dev", "qa"], ["create", "qa"]])
+    def test_env_created_paths_are_not_wrapped(self, invoke, project_dir, command):
+        project, _, _ = project_dir
+        vars_dir = project / ("environment-files-" * 6)
+        vars_dir.mkdir()
+        for name in ("dev.tfvars", "dev.tfbackend"):
+            (vars_dir / name).write_text((project / "vars" / name).read_text())
+        (project / ".toffee.json").write_text(
+            json.dumps({"vars_dir": vars_dir.name, "terraform_path": "terraform"})
+        )
+
+        result = invoke("env", *command)
+
+        assert result.exit_code == 0, result.output
+        assert len(str(vars_dir / "qa.tfvars")) > 80
+        lines = result.stdout.splitlines()
+        assert f"  - {vars_dir / 'qa.tfvars'}" in lines
 
     def test_config_set_project(self, invoke, project_dir):
         project, _, _ = project_dir
@@ -217,7 +394,10 @@ class TestCLI:
     def test_destroy_abort_returns_nonzero(self, invoke, mock_terraform_log):
         result = invoke("dev", "destroy", input="n\n")
         assert result.exit_code == 1
-        assert "aborted" in result.stdout.lower()
+        assert "aborted" in result.stderr.lower()
+        assert "This will destroy resources in: dev" in result.stderr
+        assert "destroy resources" not in result.stdout
+        assert "Do you want to continue" not in result.stdout
         assert "destroy" not in mock_terraform_log.read_text()
 
     def test_destroy_confirmed_runs(self, invoke, mock_terraform_log):
@@ -238,9 +418,7 @@ class TestCLI:
     def test_project_auto_approve_does_not_bypass_prod_destroy_confirmation(
         self, invoke, mock_terraform_log
     ):
-        config_result = invoke(
-            "config", "set", "auto_approve", "true", "--project"
-        )
+        config_result = invoke("config", "set", "auto_approve", "true", "--project")
         assert config_result.exit_code == 0
 
         result = invoke("prod", "destroy", input="n\n")
@@ -249,7 +427,9 @@ class TestCLI:
         assert "destroy resources in PROD" in result.stderr
         assert mock_terraform_log.read_text() == ""
 
-    def test_auto_approve_config_not_duplicated(self, invoke, project_dir, mock_terraform_log):
+    def test_auto_approve_config_not_duplicated(
+        self, invoke, project_dir, mock_terraform_log
+    ):
         project, _, _ = project_dir
         invoke("config", "set", "auto_approve", "true", "--project")
         result = invoke("dev", "apply", "-auto-approve")
@@ -306,9 +486,7 @@ class TestCLI:
         assert "serialized" in result.stderr
         assert mock_terraform_log.read_text().count(" init ") == 2
 
-    def test_parallel_interactive_apply_is_rejected(
-        self, invoke, mock_terraform_log
-    ):
+    def test_parallel_interactive_apply_is_rejected(self, invoke, mock_terraform_log):
         result = invoke("dev,staging", "apply", "--parallel")
         assert result.exit_code == 1
         assert "requires -auto-approve" in result.stderr
@@ -321,9 +499,7 @@ class TestCLI:
         assert captured.out == '{"environment":"mock"}\n'
         assert "Running:" in result.stderr
 
-    def test_global_terraform_options_are_preserved(
-        self, invoke, mock_terraform_log
-    ):
+    def test_global_terraform_options_are_preserved(self, invoke, mock_terraform_log):
         result = invoke("dev", "-compact-warnings", "plan")
         assert result.exit_code == 0
         log = mock_terraform_log.read_text()

@@ -2,16 +2,29 @@
 Configuration commands for the Toffee CLI tool
 """
 
-import json
 import os
 
+import click
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
-from ..core.config import DEFAULT_CONFIG
+from ..core.config import (
+    DEFAULT_CONFIG,
+    PROJECT_CONFIG_NAME,
+    ConfigError,
+    is_project_terraform_name,
+    project_vars_dir_error,
+    read_config_file,
+    untrusted_terraform_path_error,
+    validate_value,
+    write_config_file,
+)
+from ..core.text import printable
 from .base import BaseCommand
 
 console = Console()
+error_console = Console(stderr=True, soft_wrap=True)
 
 
 class ConfigCommands(BaseCommand):
@@ -19,57 +32,46 @@ class ConfigCommands(BaseCommand):
 
     def show_config(self) -> int:
         """Show the current configuration"""
-        # Create a table of config values
         table = Table(title="Toffee Configuration")
         table.add_column("Setting", style="cyan")
         table.add_column("Value", style="green")
         table.add_column("Source", style="yellow")
 
-        project_config = {}
-
-        # Check if there's a project config file
-        project_config_file = os.path.join(os.getcwd(), ".toffee.json")
-        if os.path.exists(project_config_file):
-            try:
-                with open(project_config_file, "r") as f:
-                    project_config = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                pass
-
-        # Merged config is what's actually used
         merged_config = self.project_config
-
-        # Add rows for each config value
         for key in sorted(merged_config.keys()):
             value = merged_config.get(key)
-            value_str = str(value) if value is not None else "None"
-
-            # Determine source
-            source = "Global"
-            if key in project_config:
-                source = "Project"
-
-            # Format value for display
             if isinstance(value, bool):
-                value_str = "[green]Yes[/]" if value else "[red]No[/]"
+                value_text = (
+                    Text("Yes", style="green") if value else Text("No", style="red")
+                )
             elif value is None:
-                value_str = "[italic]None[/]"
-
-            table.add_row(key, value_str, source)
+                value_text = Text("None", style="italic")
+            elif isinstance(value, list):
+                value_text = Text(printable(", ".join(map(str, value))) or "(none)")
+            else:
+                value_text = Text(printable(str(value)))
+            source = self.config.sources.get(key, "Default")
+            table.add_row(Text(printable(key)), value_text, source)
 
         console.print(table)
         return 0
 
     def set_config(self, key: str, value: str, project: bool = False) -> int:
         """Set a configuration value"""
-        # Validate key
         if key not in DEFAULT_CONFIG:
-            console.print(f"[bold red]Error:[/] Unknown configuration key: {key}")
-            console.print(f"[yellow]Valid keys:[/] {', '.join(DEFAULT_CONFIG.keys())}")
+            error_console.print(
+                f"Error: Unknown configuration key: {key}", markup=False
+            )
+            error_console.print(f"Valid keys: {', '.join(DEFAULT_CONFIG.keys())}")
             return 1
 
-        # Convert value to the right type based on the default
         default_value = DEFAULT_CONFIG[key]
+        if isinstance(default_value, list):
+            error_console.print(
+                f"[bold red]Error:[/] {key} is a list. Edit it in {PROJECT_CONFIG_NAME}, "
+                f'for example: "{key}": ["staging"]'
+            )
+            return 1
 
         if isinstance(default_value, bool):
             if value.lower() in ("yes", "true", "1", "y", "t"):
@@ -77,58 +79,67 @@ class ConfigCommands(BaseCommand):
             elif value.lower() in ("no", "false", "0", "n", "f"):
                 typed_value = False
             else:
-                console.print(f"[bold red]Error:[/] Invalid boolean value: {value}")
-                console.print("[yellow]Use 'true' or 'false'[/]")
+                error_console.print(
+                    f"Error: Invalid boolean value: {value}. Use 'true' or 'false'.",
+                    markup=False,
+                )
                 return 1
-        elif isinstance(default_value, int):
-            try:
-                typed_value = int(value)
-            except ValueError:
-                console.print(f"[bold red]Error:[/] Invalid integer value: {value}")
-                return 1
-        elif default_value is None:
-            if value.lower() in ("none", "null"):
-                typed_value = None
-            else:
-                typed_value = value
         else:
-            # String or other type
             typed_value = value
 
-        # Set the value
-        if project:
-            project_config_file = os.path.join(os.getcwd(), ".toffee.json")
-            project_config = {}
-            if os.path.exists(project_config_file):
-                try:
-                    with open(project_config_file, "r") as f:
-                        project_config = json.load(f)
-                except json.JSONDecodeError:
-                    project_config = {}
-
-            project_config[key] = typed_value
-            with open(project_config_file, "w") as f:
-                json.dump(project_config, f, indent=2)
-            console.print(
-                f"[green]Set project [bold]{key}[/] to [bold]{typed_value}[/][/]"
+        problem = validate_value(key, typed_value)
+        if problem:
+            error_console.print(f"Error: {problem}", markup=False)
+            return 1
+        if project and key == "terraform_path" and not is_project_terraform_name(value):
+            error_console.print(
+                f"Error: {untrusted_terraform_path_error(value)}", markup=False
             )
-        else:
-            self.config.set(key, typed_value)
-            console.print(f"[green]Set global [bold]{key}[/] to [bold]{typed_value}[/][/]")
+            return 1
+        if project and key == "vars_dir":
+            problem = project_vars_dir_error(os.getcwd(), value)
+            if problem:
+                error_console.print(f"Error: {problem}", markup=False)
+                return 1
+
+        try:
+            if project:
+                project_config_file = os.path.join(os.getcwd(), PROJECT_CONFIG_NAME)
+                project_config = read_config_file(project_config_file)
+                project_config[key] = typed_value
+                write_config_file(project_config_file, project_config)
+            else:
+                self.config.set(key, typed_value)
+        except ConfigError as e:
+            error_console.print(f"Error: {e}", markup=False, highlight=False)
+            return 1
+
+        scope = "project" if project else "global"
+        console.print(
+            printable(f"Set {scope} {key} to {typed_value}"),
+            style="green",
+            markup=False,
+            highlight=False,
+        )
         return 0
 
     def init_project_config(self) -> int:
         """Initialize a project configuration file"""
-        project_config_file = os.path.join(os.getcwd(), ".toffee.json")
+        project_config_file = os.path.join(os.getcwd(), PROJECT_CONFIG_NAME)
 
         if os.path.exists(project_config_file):
             console.print(
-                f"[yellow]Project configuration already exists:[/] {project_config_file}"
+                f"Project configuration already exists: {project_config_file}",
+                style="yellow",
+                markup=False,
             )
-            if not console.input("[bold]Overwrite? (y/n)[/] ").lower().startswith("y"):
+            try:
+                overwrite = click.confirm("Overwrite?", default=False, err=True)
+            except click.Abort:
+                overwrite = False
+            if not overwrite:
                 return 0
 
-        # Create a default project config
         default_project_config = {
             "vars_dir": "vars",
             "terraform_path": "terraform",
@@ -136,8 +147,15 @@ class ConfigCommands(BaseCommand):
             "verbose": False,
         }
 
-        with open(project_config_file, "w") as f:
-            json.dump(default_project_config, f, indent=2)
+        try:
+            write_config_file(project_config_file, default_project_config)
+        except ConfigError as e:
+            error_console.print(f"Error: {e}", markup=False, highlight=False)
+            return 1
 
-        console.print(f"[green]Created project configuration:[/] {project_config_file}")
+        console.print(
+            f"Created project configuration: {project_config_file}",
+            style="green",
+            markup=False,
+        )
         return 0

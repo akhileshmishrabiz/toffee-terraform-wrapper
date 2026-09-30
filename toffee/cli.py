@@ -2,7 +2,10 @@
 Main CLI entrypoint for the Toffee CLI tool
 """
 
+from typing import Optional
+
 import click
+from click.core import ParameterSource
 from rich.console import Console
 
 from . import __version__
@@ -10,7 +13,10 @@ from .commands.config import ConfigCommands
 from .commands.diff import DiffCommands
 from .commands.env import EnvCommands
 from .commands.info import InfoCommands
+from .commands.new import NewCommand
 from .commands.terraform import TerraformCommands
+from .core.config import ConfigError
+from .core.scaffold import Options
 
 PASSTHROUGH_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
 
@@ -23,6 +29,12 @@ class EnvironmentFirstGroup(click.Group):
         if command is not None:
             return command
         return _environment_target_command(cmd_name)
+
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except ConfigError as e:
+            raise click.ClickException(f"Invalid configuration: {e}") from e
 
 
 console = Console()
@@ -49,11 +61,20 @@ def get_diff_commands() -> DiffCommands:
     return DiffCommands()
 
 
+def get_new_command() -> NewCommand:
+    return NewCommand()
+
+
 def _environment_target_command(target_spec: str) -> click.Command:
     """Create a passthrough command for an environment target expression."""
 
-    @click.command(name=target_spec, context_settings=PASSTHROUGH_CONTEXT)
-    @click.argument("terraform_command")
+    # --help and -h belong to Terraform here, e.g. `toffee dev plan --help`.
+    @click.command(
+        name=target_spec,
+        context_settings=PASSTHROUGH_CONTEXT,
+        add_help_option=False,
+    )
+    @click.argument("terraform_command", required=False)
     @click.argument("terraform_args", nargs=-1, type=click.UNPROCESSED)
     @click.option(
         "--parallel",
@@ -61,20 +82,35 @@ def _environment_target_command(target_spec: str) -> click.Command:
         help="Run the Terraform command concurrently for all target environments.",
     )
     def target_command(
-        terraform_command: str,
+        terraform_command: Optional[str],
         terraform_args: tuple,
         parallel: bool,
     ) -> None:
-        env_names = list(
-            dict.fromkeys(name.strip() for name in target_spec.split(","))
-        )
+        if terraform_command is None:
+            raise click.UsageError(
+                f"Missing Terraform command after environment target {target_spec!r}. "
+                "Run: toffee <env>[,<env>...] <terraform-command> [args]"
+            )
+        env_names = list(dict.fromkeys(name.strip() for name in target_spec.split(",")))
         if any(not name for name in env_names):
             raise click.UsageError(
                 "Environment targets must be comma-separated names, for example: "
                 "toffee dev,prod plan"
             )
+        folded = [name.casefold() for name in env_names]
+        if len(folded) != len(set(folded)):
+            raise click.UsageError(
+                "Environment targets must be unique ignoring letter case."
+            )
 
         raw_argv = [terraform_command, *terraform_args]
+        # Terraform skips empty arguments when choosing its subcommand, so an
+        # unset shell variable could otherwise hide the real command from Toffee.
+        if any(not arg.strip() for arg in raw_argv):
+            raise click.UsageError(
+                "Empty or whitespace-only arguments are not allowed. "
+                "Check for unset shell variables."
+            )
         command_index = next(
             (index for index, arg in enumerate(raw_argv) if not arg.startswith("-")),
             0,
@@ -140,15 +176,113 @@ def env_app() -> None:
     is_flag=True,
     help="Show values that are redacted by default.",
 )
+@click.option(
+    "--exit-code",
+    is_flag=True,
+    help="Exit with status 1 when the environments differ.",
+)
 def diff_environments(
     source: str,
     target: str,
     show_sensitive: bool,
+    exit_code: bool,
 ) -> None:
     """Compare variable and backend mappings for two environments."""
     raise click.exceptions.Exit(
-        get_diff_commands().compare(source, target, show_sensitive)
+        get_diff_commands().compare(source, target, show_sensitive, exit_code)
     )
+
+
+@app.command("new")
+@click.argument("directory", required=False)
+@click.option(
+    "--name",
+    help="Project name used in state keys and tags.",
+    show_default="directory name",
+)
+@click.option(
+    "--envs",
+    default="dev",
+    show_default=True,
+    help="Comma-separated environments to create. An existing project keeps "
+    "its environments.",
+)
+@click.option(
+    "--provider",
+    default="aws",
+    show_default=True,
+    metavar="[aws|google|azurerm|none]",
+    help="Cloud provider to configure.",
+)
+@click.option(
+    "--backend",
+    metavar="[s3|gcs|azurerm|local]",
+    help="Where Terraform keeps state.",
+    show_default="matches --provider",
+)
+@click.option(
+    "--region",
+    help="Region or location for the provider and state.",
+    show_default="the provider's usual region, such as us-east-1",
+)
+@click.option(
+    "--template",
+    metavar="DIR",
+    help="Copy this local template directory instead of the built-in one.",
+)
+@click.option(
+    "--agents",
+    is_flag=True,
+    help="Also write AGENTS.md with conventions for AI coding agents.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be created without writing anything.",
+)
+@click.pass_context
+def new_project(
+    ctx: click.Context,
+    directory: Optional[str],
+    name: Optional[str],
+    envs: Optional[str],
+    provider: Optional[str],
+    backend: Optional[str],
+    region: Optional[str],
+    template: Optional[str],
+    agents: bool,
+    dry_run: bool,
+) -> None:
+    """Create a Terraform project set up for Toffee.
+
+    \b
+    Examples:
+      toffee new                          # scaffold the current directory
+      toffee new my-service --envs dev,prod
+      toffee new --provider google --region europe-west1 --dry-run
+
+    Writes Terraform files, vars/<env>.tfvars and vars/<env>.tfbackend for
+    each environment, .toffee.json, and .gitignore into DIRECTORY (default:
+    the current directory). Existing files are never overwritten, so it is
+    safe to run again, for example to add an environment.
+    """
+
+    def given(value: Optional[str], parameter: str) -> Optional[str]:
+        # Unset defaults defer to values found in an existing project.
+        source = ctx.get_parameter_source(parameter)
+        return None if source is ParameterSource.DEFAULT else value
+
+    options = Options(
+        directory=directory,
+        name=name,
+        envs=given(envs, "envs"),
+        provider=given(provider, "provider"),
+        backend=backend,
+        region=region,
+        template=template,
+        agents=agents,
+    )
+    raise click.exceptions.Exit(get_new_command().run(options, dry_run))
 
 
 @info_app.command("envs")
@@ -196,9 +330,7 @@ def set_config(
     project: bool,
 ) -> None:
     """Set a configuration value."""
-    raise click.exceptions.Exit(
-        get_config_commands().set_config(key, value, project)
-    )
+    raise click.exceptions.Exit(get_config_commands().set_config(key, value, project))
 
 
 @config_app.command("init")
@@ -224,9 +356,7 @@ def copy_environment(
     target: str,
 ) -> None:
     """Copy an existing environment to a new one."""
-    raise click.exceptions.Exit(
-        get_env_commands().copy_environment(source, target)
-    )
+    raise click.exceptions.Exit(get_env_commands().copy_environment(source, target))
 
 
 if __name__ == "__main__":

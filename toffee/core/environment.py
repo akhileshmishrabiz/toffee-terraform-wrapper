@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-ENV_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
-RESERVED_ENV_NAMES = frozenset({"config", "diff", "env", "info"})
+ENV_NAME_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]*")
+RESERVED_ENV_NAMES = frozenset({"config", "diff", "env", "info", "new"})
 
 
 @dataclass
@@ -25,6 +25,7 @@ class Environment:
     def is_valid(self) -> bool:
         """Check if the environment has valid files"""
         return os.path.isfile(self.vars_file) and os.path.isfile(self.backend_file)
+
 
 class EnvironmentManager:
     """Manages discovery and validation of Terraform environments"""
@@ -49,7 +50,7 @@ class EnvironmentManager:
         tfvars_files = glob.glob(os.path.join(self.vars_dir, "*.tfvars"))
         for vars_file in tfvars_files:
             env_name = Path(vars_file).stem
-            if not self._is_safe_env_path(env_name, vars_dir_real):
+            if not self._is_usable_name(env_name, vars_dir_real):
                 continue
 
             backend_file = os.path.join(self.vars_dir, f"{env_name}.tfbackend")
@@ -60,7 +61,7 @@ class EnvironmentManager:
         backend_files = glob.glob(os.path.join(self.vars_dir, "*.tfbackend"))
         for backend_file in backend_files:
             env_name = Path(backend_file).stem
-            if not self._is_safe_env_path(env_name, vars_dir_real):
+            if not self._is_usable_name(env_name, vars_dir_real):
                 continue
 
             if env_name not in self._environments:
@@ -68,6 +69,38 @@ class EnvironmentManager:
                 self._environments[env_name] = Environment(
                     name=env_name, vars_file=vars_file, backend_file=backend_file
                 )
+
+    def _is_usable_name(self, env_name: str, vars_dir_real: str) -> bool:
+        """Only list names that commands will accept."""
+        return self.validate_env_name(env_name)[0] and self._is_safe_env_path(
+            env_name, vars_dir_real
+        )
+
+    def env_file_paths(self, name: str) -> Tuple[str, str]:
+        return (
+            os.path.join(self.vars_dir, f"{name}.tfvars"),
+            os.path.join(self.vars_dir, f"{name}.tfbackend"),
+        )
+
+    def case_conflict(self, name: str) -> Optional[str]:
+        """Return an existing environment whose name differs only by case."""
+        try:
+            entries = os.listdir(self.vars_dir)
+        except OSError:
+            return None
+        folded = name.casefold()
+        for entry in sorted(entries):
+            stem, suffix = os.path.splitext(entry)
+            if (
+                suffix in (".tfvars", ".tfbackend")
+                and stem != name
+                and stem.casefold() == folded
+            ):
+                return stem
+        return None
+
+    def is_safe_env_path(self, env_name: str) -> bool:
+        return self._is_safe_env_path(env_name, os.path.realpath(self.vars_dir))
 
     def _is_safe_env_path(self, env_name: str, vars_dir_real: str) -> bool:
         """Ensure resolved env file paths stay directly inside vars_dir."""
@@ -84,14 +117,18 @@ class EnvironmentManager:
         """Validate an environment name before creating or using it."""
         if not name:
             return False, "Environment name cannot be empty"
-        if not ENV_NAME_PATTERN.match(name):
+        if not ENV_NAME_PATTERN.fullmatch(name):
             return (
                 False,
                 "Environment name must start with a letter or digit and contain "
                 "only letters, digits, underscores, and hyphens",
             )
-        if name in RESERVED_ENV_NAMES:
-            return False, f"Environment name '{name}' is reserved by Toffee"
+        if name.casefold() in RESERVED_ENV_NAMES:
+            return (
+                False,
+                f"Environment name '{name}' is reserved for the Toffee command of "
+                f"the same name (reserved: {', '.join(sorted(RESERVED_ENV_NAMES))})",
+            )
         if ".." in name or "/" in name or "\\" in name:
             return False, f"Invalid environment name: '{name}'"
         return True, None
@@ -203,13 +240,22 @@ class EnvironmentManager:
         if not valid_name:
             return False, name_error
 
+        conflict = self.case_conflict(name)
+        if conflict:
+            return (
+                False,
+                f"'{name}' differs only by case from existing environment '{conflict}'",
+            )
+
         try:
             os.makedirs(self.vars_dir, exist_ok=True)
             vars_dir_real = os.path.realpath(self.vars_dir)
 
-            vars_file = os.path.join(self.vars_dir, f"{name}.tfvars")
-            backend_file = os.path.join(self.vars_dir, f"{name}.tfbackend")
+            vars_file, backend_file = self.env_file_paths(name)
 
+            for path in (vars_file, backend_file):
+                if os.path.islink(path):
+                    return False, f"Refusing to write through symlink: {path}"
             if not self._is_safe_env_path(name, vars_dir_real):
                 return False, f"Invalid environment name: '{name}'"
 

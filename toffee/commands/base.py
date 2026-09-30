@@ -4,21 +4,41 @@ Base command handler for the Toffee CLI tool
 
 import logging
 import os
-import shlex
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Optional
+import sys
+from typing import List, Optional, Sequence
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
+from ..core.backend import (
+    Backend,
+    BackendError,
+    Identity,
+    backend_config_overrides,
+    describe_identity,
+    find_backend_or_unknown,
+    read_settings,
+    same_state,
+    selected_workspace,
+    state_identity,
+)
 from ..core.config import Config
 from ..core.environment import EnvironmentManager
-from ..core.executor import run_captured, run_streamed
-from ..core.terraform import TerraformRunner
+from ..core.executor import run_parallel, run_streamed
+from ..core.safety import is_protected_environment
+from ..core.terraform import (
+    TerraformRunner,
+    bool_flag,
+    display_command,
+    uses_state,
+    working_directory,
+)
+from ..core.text import printable
 
 console = Console()
-error_console = Console(stderr=True)
-status_console = Console(stderr=True)
+error_console = Console(stderr=True, soft_wrap=True)
+status_console = Console(stderr=True, soft_wrap=True)
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +56,14 @@ class BaseCommand:
 
         terraform_path = self.project_config.get("terraform_path", "terraform")
         self.terraform = TerraformRunner(terraform_path=terraform_path)
+        self.protected_names = self.project_config.get("protected_environments", [])
+
+    def is_protected(self, env_name: str) -> bool:
+        return is_protected_environment(env_name, self.protected_names)
+
+    def display_path(self, path: str) -> str:
+        relative = os.path.relpath(path, self.project_dir)
+        return path if relative.startswith("..") else relative
 
     def _setup_logging(self) -> None:
         if self.project_config.get("verbose", False):
@@ -86,10 +114,15 @@ class BaseCommand:
             status = "ready" if vars_exists and backend_exists else "incomplete"
 
             table.add_row(
-                name,
-                os.path.basename(env.vars_file) + (" ✓" if vars_exists else " ✗"),
-                os.path.basename(env.backend_file)
-                + (" ✓" if backend_exists else " ✗"),
+                Text(printable(name)),
+                Text(
+                    printable(os.path.basename(env.vars_file))
+                    + (" ✓" if vars_exists else " ✗")
+                ),
+                Text(
+                    printable(os.path.basename(env.backend_file))
+                    + (" ✓" if backend_exists else " ✗")
+                ),
                 status,
             )
 
@@ -111,24 +144,25 @@ class BaseCommand:
                 return 1
             env = self.env_manager.get_environment(env_name)
 
-        cmd = self.terraform.build_command(
-            command_name, env, extra_args, global_args
+        cmd = self.terraform.build_command(command_name, env, extra_args, global_args)
+        status_console.print(
+            f"Running: {display_command(cmd)}", markup=False, highlight=False
         )
-        status_console.print(f"Running: {shlex.join(cmd)}")
 
         try:
             process_env = self._environment_variables(env_name) if env_name else None
             return_code = run_streamed(cmd, process_env)
-            if return_code == 0:
-                status_console.print("Command succeeded")
-            else:
-                status_console.print(
-                    f"Command failed with exit code {return_code}"
-                )
-            return return_code
         except OSError as e:
-            error_console.print(f"Error executing command: {e}")
+            error_console.print(
+                f"Error executing command: {e}", markup=False, highlight=False
+            )
             return 1
+        status_console.print(
+            self._result_message("Command", return_code, extra_args),
+            markup=False,
+            highlight=False,
+        )
+        return return_code
 
     def execute_for_environments(
         self,
@@ -156,7 +190,27 @@ class BaseCommand:
             if not self.validate_environment(env_name):
                 return 1
 
-        if not self.confirm_execution(env_names, command_name, extra_args):
+        global_args = list(global_args or [])
+        root_dir = working_directory(global_args)
+        overrides = {}
+        if command_name == "init":
+            try:
+                overrides = backend_config_overrides(extra_args, root_dir)
+            except BackendError as e:
+                error_console.print(
+                    f"Error: Cannot verify backend overrides: {e}",
+                    markup=False,
+                    highlight=False,
+                )
+                return 1
+        if not self.check_state_isolation(
+            env_names,
+            root_dir,
+            uses_state(command_name, extra_args, global_args),
+            overrides,
+        ):
+            return 1
+        if not self.prepare_execution(env_names, command_name, extra_args, global_args):
             return 1
 
         if parallel and command_name == "init":
@@ -172,8 +226,9 @@ class BaseCommand:
             )
 
         status_console.print(
-            f"Running [bold]{command_name}[/] for environments: "
-            f"{', '.join(env_names)}"
+            f"Running {command_name} for environments: {', '.join(env_names)}",
+            markup=False,
+            highlight=False,
         )
 
         if parallel:
@@ -181,23 +236,183 @@ class BaseCommand:
                 env_names, command_name, extra_args, global_args
             )
 
+        codes = []
         for env_name in env_names:
             status_console.print(f"\n[bold]Environment:[/] {env_name}")
             code = self.execute_terraform_command(
                 env_name, command_name, extra_args, global_args
             )
-            if code != 0:
+            codes.append(code)
+            if self._is_failure(code, extra_args):
                 return code
-        return 0
+        return self.combined_exit_code(codes, extra_args)
 
-    def confirm_execution(
+    @staticmethod
+    def _is_failure(code: int, extra_args: Sequence[str]) -> bool:
+        # With -detailed-exitcode, Terraform exits 2 when changes are present.
+        return code != 0 and not (
+            code == 2 and bool_flag(extra_args, "detailed-exitcode")
+        )
+
+    @classmethod
+    def combined_exit_code(cls, codes: Sequence[int], extra_args: Sequence[str]) -> int:
+        """Report the first failure, else 2 if any target had changes, else 0."""
+        for code in codes:
+            if cls._is_failure(code, extra_args):
+                return code
+        return 2 if 2 in codes else 0
+
+    @classmethod
+    def _result_message(cls, subject: str, code: int, extra_args: Sequence[str]) -> str:
+        if code == 0:
+            return f"{subject} succeeded"
+        if not cls._is_failure(code, extra_args):
+            return f"{subject} succeeded with changes present"
+        return f"{subject} failed with exit code {code}"
+
+    def prepare_execution(
         self,
         env_names: List[str],
         command_name: str,
         extra_args: List[str],
+        global_args: List[str],
     ) -> bool:
         """Allow subclasses to confirm execution after all targets are validated."""
         return True
+
+    def check_state_isolation(
+        self,
+        env_names: List[str],
+        root_dir: str,
+        compare_state: bool = True,
+        target_overrides: Optional[dict] = None,
+    ) -> bool:
+        """Refuse to run when a target shares files or state with another env."""
+        all_names = self.env_manager.get_environment_names()
+        owners = {}
+        for name in all_names:
+            env = self.env_manager.get_environment(name)
+            for path in (env.vars_file, env.backend_file):
+                if os.path.exists(path):
+                    owners.setdefault(os.path.realpath(path), []).append((name, path))
+
+        for target in env_names:
+            env = self.env_manager.get_environment(target)
+            for path in (env.vars_file, env.backend_file):
+                for owner, owner_path in owners.get(os.path.realpath(path), []):
+                    if owner != target:
+                        error_console.print(
+                            f"Error: {self.display_path(path)} resolves to the same "
+                            f"file as {self.display_path(owner_path)} "
+                            f"(environment '{owner}'). Each environment needs its "
+                            "own files.",
+                            markup=False,
+                            highlight=False,
+                        )
+                        return False
+
+        if not compare_state:
+            return True
+        comparable = [
+            name
+            for name in all_names
+            if os.path.isfile(self.env_manager.get_environment(name).backend_file)
+        ]
+        if len(comparable) < 2:
+            return True
+
+        settings = {}
+        for name in comparable:
+            backend_file = self.env_manager.get_environment(name).backend_file
+            try:
+                settings[name] = read_settings(backend_file)
+            except BackendError as e:
+                if name in env_names:
+                    error_console.print(
+                        "Error: Cannot verify that environments use separate "
+                        f"state: {e}",
+                        markup=False,
+                        highlight=False,
+                    )
+                    return False
+                self.warn_unreadable_peer(backend_file, e)
+        backend = self.load_backend(root_dir)
+        identities = {}
+        for name, values in settings.items():
+            effective = dict(values)
+            if target_overrides and name in env_names:
+                effective.update(target_overrides)
+            identities[name] = self.state_identity(backend, name, effective, root_dir)
+
+        for target in env_names:
+            for other, identity in identities.items():
+                if other != target and same_state(identity, identities[target]):
+                    self.print_shared_state(
+                        target, other, identities[target], backend, root_dir
+                    )
+                    return False
+        return True
+
+    def load_backend(self, root_dir: str) -> Optional[Backend]:
+        """Find the root module's backend, degrading to UNKNOWN_BACKEND."""
+        backend, problem = find_backend_or_unknown(root_dir)
+        if problem:
+            error_console.print(
+                f"Warning: Cannot parse the root module ({problem}). Comparing "
+                "environments by all of their non-credential backend settings "
+                "instead.",
+                markup=False,
+                highlight=False,
+            )
+        return backend
+
+    def warn_unreadable_peer(self, backend_file: str, error: Exception) -> None:
+        error_console.print(
+            f"Warning: Ignoring {self.display_path(backend_file)} when checking "
+            f"for shared state because it cannot be parsed: {error}",
+            markup=False,
+            highlight=False,
+        )
+
+    def state_identity(
+        self,
+        backend: Optional[Backend],
+        env_name: str,
+        settings: dict,
+        root_dir: str,
+    ) -> Identity:
+        workspace = selected_workspace(self.terraform_data_dir(env_name))
+        return state_identity(backend, settings, root_dir, workspace)
+
+    def print_shared_state(
+        self,
+        env_name: str,
+        other_name: str,
+        identity: Identity,
+        backend: Optional[Backend],
+        root_dir: str,
+    ) -> None:
+        error_console.print(
+            f"Error: Environments '{env_name}' and '{other_name}' would share "
+            f"Terraform state ({describe_identity(identity)}).",
+            markup=False,
+            highlight=False,
+        )
+        if backend is None:
+            error_console.print(
+                f"No backend block was found in {root_dir}, so every environment "
+                "uses the default local state. Add a backend block to the root "
+                "module.",
+                markup=False,
+                highlight=False,
+            )
+        else:
+            error_console.print(
+                "Give each environment its own state location in "
+                f"{self.display_path(self.env_manager.vars_dir)}/<env>.tfbackend.",
+                markup=False,
+                highlight=False,
+            )
 
     def _execute_parallel(
         self,
@@ -206,60 +421,62 @@ class BaseCommand:
         extra_args: List[str],
         global_args: Optional[List[str]],
     ) -> int:
-        results = {}
-        with ThreadPoolExecutor(max_workers=min(len(env_names), 8)) as executor:
-            futures = {
-                executor.submit(
-                    self._execute_captured,
-                    env_name,
-                    command_name,
-                    extra_args,
-                    global_args,
-                ): env_name
-                for env_name in env_names
-            }
-            for future in as_completed(futures):
-                env_name = futures[future]
-                try:
-                    results[env_name] = future.result()
-                except OSError as e:
-                    results[env_name] = (1, f"Error executing command: {e}")
-
-        exit_code = 0
-        for env_name in env_names:
-            code, output = results[env_name]
-            status_console.rule(f"[bold]{env_name}[/]")
-            if output:
-                console.print(output.rstrip(), markup=False, highlight=False)
-            if code == 0:
-                status_console.print(f"[green]{env_name} succeeded[/]")
-            else:
-                status_console.print(
-                    f"[red]{env_name} failed with exit code {code}[/]"
-                )
-                exit_code = code
-        return exit_code
-
-    def _execute_captured(
-        self,
-        env_name: str,
-        command_name: str,
-        extra_args: List[str],
-        global_args: Optional[List[str]],
-    ) -> tuple:
-        env = self.env_manager.get_environment(env_name)
-        cmd = self.terraform.build_command(
-            command_name, env, extra_args, global_args
+        commands = [
+            self.terraform.build_command(
+                command_name,
+                self.env_manager.get_environment(env_name),
+                extra_args,
+                global_args,
+                non_interactive=True,
+            )
+            for env_name in env_names
+        ]
+        results = run_parallel(
+            [
+                (cmd, self._environment_variables(env_name))
+                for env_name, cmd in zip(env_names, commands)
+            ]
         )
-        logger.debug("Running in parallel: %s", " ".join(cmd))
-        return run_captured(cmd, self._environment_variables(env_name))
+
+        codes = []
+        for env_name, cmd, (code, stdout, stderr) in zip(env_names, commands, results):
+            status_console.rule(f"[bold]{env_name}[/]")
+            status_console.print(
+                f"Running: {display_command(cmd)}", markup=False, highlight=False
+            )
+            # Raw bytes keep machine-readable output (such as -json) intact.
+            _write_raw(sys.stdout, stdout)
+            _write_raw(sys.stderr, stderr)
+            style = "red" if self._is_failure(code, extra_args) else "green"
+            status_console.print(
+                self._result_message(env_name, code, extra_args),
+                style=style,
+                markup=False,
+                highlight=False,
+            )
+            codes.append(code)
+        return self.combined_exit_code(codes, extra_args)
+
+    def terraform_data_dir(self, env_name: str) -> str:
+        return os.path.join(self.project_dir, ".toffee", "terraform-data", env_name)
 
     def _environment_variables(self, env_name: str) -> dict:
         """Return a subprocess environment with isolated Terraform metadata."""
-        data_dir = os.path.join(
-            self.project_dir, ".toffee", "terraform-data", env_name
-        )
+        data_dir = self.terraform_data_dir(env_name)
         os.makedirs(data_dir, exist_ok=True)
         process_env = os.environ.copy()
         process_env["TF_DATA_DIR"] = data_dir
         return process_env
+
+
+def _write_raw(stream, data: bytes) -> None:
+    if not data:
+        return
+    stream.flush()
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        stream.write(data.decode(errors="replace"))
+    else:
+        buffer.write(data)
+        buffer.flush()
+    stream.flush()
