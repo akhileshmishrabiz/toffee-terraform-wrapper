@@ -5,16 +5,35 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "toffee"
 dynamic = ["version"]
-description = "A lightweight environment-first Terraform wrapper"
+description = "A safe environment-first Terraform and OpenTofu CLI wrapper"
 authors = [
     {name = "Akhilesh Mishra", email = "akhileshmishrabiz@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.10"
+license = {file = "LICENSE"}
+keywords = ["terraform", "opentofu", "infrastructure-as-code", "cli", "devops"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "click>=8.2",
     "rich>=12.0.0"
 ]
+
+[project.urls]
+Homepage = "https://github.com/akhileshmishrabiz/toffee-terraform-wrapper"
+Repository = "https://github.com/akhileshmishrabiz/toffee-terraform-wrapper"
+Issues = "https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/issues"
+Changelog = "https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
