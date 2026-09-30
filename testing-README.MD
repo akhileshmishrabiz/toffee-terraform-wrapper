@@ -28,6 +28,11 @@ ruff check .
   handling with a real subprocess.
 - `tests/test_config.py` covers configuration validation, the
   `terraform_path` trust rule, and saving.
+- `tests/test_new.py` covers `toffee new`: the generated layout and contents,
+  separate state per environment, reruns, `.gitignore` merging (checked with
+  `git check-ignore`), error messages, custom templates, symlink refusal, the
+  `CHANGE-ME` guard on `init`, and the user experience: a golden copy of the
+  default output, help text, and running the printed next steps.
 - `tests/test_environment.py` covers environment discovery, validation, safe
   paths, and template creation.
 - `tests/test_environment_diff.py` covers the settings parser and redaction.
@@ -39,7 +44,8 @@ ruff check .
   against real Terraform when it is on `PATH`, and is skipped otherwise. It
   initializes and applies dev and staging into distinct state files, checks
   that the empty-argument and cross-environment saved-plan bypasses are
-  blocked, and initializes through a symlinked project path.
+  blocked, initializes through a symlinked project path, and initializes,
+  validates, and plans a fresh `toffee new --provider none` project.
 
 An autouse fixture gives every test a temporary `HOME` and clears
 `TOFFEE_TERRAFORM_PATH`, `TF_WORKSPACE`, and `TF_DATA_DIR`, so a developer's

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 ENV_NAME_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]*")
-RESERVED_ENV_NAMES = frozenset({"config", "diff", "env", "info"})
+RESERVED_ENV_NAMES = frozenset({"config", "diff", "env", "info", "new"})
 
 
 @dataclass
@@ -123,7 +123,11 @@ class EnvironmentManager:
                 "only letters, digits, underscores, and hyphens",
             )
         if name in RESERVED_ENV_NAMES:
-            return False, f"Environment name '{name}' is reserved by Toffee"
+            return (
+                False,
+                f"Environment name '{name}' is reserved for the Toffee command of "
+                f"the same name (reserved: {', '.join(sorted(RESERVED_ENV_NAMES))})",
+            )
         if ".." in name or "/" in name or "\\" in name:
             return False, f"Invalid environment name: '{name}'"
         return True, None

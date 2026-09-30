@@ -79,6 +79,91 @@ python3 -m pip install .
 toffee --version
 ```
 
+## Start a new project
+
+```bash
+toffee new my-service
+```
+
+```text
+Created 11 files for project my-service:
+
+my-service/
+├── modules/
+│   └── .gitkeep
+├── main.tf
+├── outputs.tf
+├── variables.tf
+├── versions.tf
+├── providers.tf
+├── data.tf
+├── vars/
+│   ├── dev.tfvars
+│   └── dev.tfbackend
+├── .toffee.json
+└── .gitignore
+
+Next steps:
+  1. Replace CHANGE-ME in my-service/vars/dev.tfbackend (bucket)
+  2. cd my-service && toffee dev init
+  3. toffee dev plan
+```
+
+There are no prompts. The project name comes from the directory, the backend
+from the provider, and the region from the provider's usual default. Values
+you must fill in are marked `CHANGE-ME` (the state bucket, plus `project_id`
+for Google). `toffee <env> init` stops with a one-line error while that
+environment's `.tfbackend` still contains `CHANGE-ME`, unless you pass the
+value with `-backend-config`.
+
+| Option | Default |
+| --- | --- |
+| `DIRECTORY` | the current directory |
+| `--envs dev,staging,prod` | `dev` |
+| `--provider aws\|google\|azurerm\|none` | `aws` |
+| `--backend s3\|gcs\|azurerm\|local` | matches the provider (`none` uses `local`) |
+| `--region` | `us-east-1`, `us-central1`, or `eastus` |
+| `--name` | the directory name |
+| `--agents` | off; writes `AGENTS.md` with conventions for AI coding agents |
+| `--dry-run` | off; prints the same summary with "Would create" and writes nothing |
+| `--template DIR` | the built-in template |
+
+Every environment gets its own state key (for example
+`key = "my-service/prod/terraform.tfstate"`), so the shared-state check passes
+on a fresh project, and `prod` and `production` are protected as usual. The
+Terraform files require Terraform 1.5 or newer and pin the provider's current
+major version (`aws ~> 6.0`, `google ~> 8.0`, `azurerm ~> 5.0`). The
+`.gitignore` ignores state, plan files, `.terraform/`, and `.toffee/`, but not
+`.terraform.lock.hcl` or `.toffee.json`.
+
+`toffee new` never overwrites a file, so it is safe to run again. With nothing
+missing it prints `Nothing to create; all files already exist`, and
+`toffee new --envs staging` adds only `vars/staging.*`. Missing `.gitignore`
+lines are appended. In an existing project it reuses the declared backend and
+provider, and the project name, region, and environments from `vars/`. If the
+directory already contains `.tf` files, it adds only Toffee's files, and each
+new `.tfvars` sets only variables the root module declares.
+
+### Custom templates
+
+`toffee new --template ./my-template` copies a local directory instead of the
+built-in template. Any path segment containing `__env__` is written once per
+environment, for example `vars/__env__.tfvars`. These tokens are replaced in
+UTF-8 files:
+
+| Token | Value |
+| --- | --- |
+| `{{project}}` | project name |
+| `{{env}}` | environment name; only in files whose path contains `__env__` |
+| `{{region}}`, `{{provider}}`, `{{backend}}` | the chosen values |
+| `{{vars_dir}}` | the environment files directory, usually `vars` |
+| `{{placeholder}}` | `CHANGE-ME` |
+
+Terraform interpolation (`${...}`, `%{...}`) and any other `{{...}}` text are
+left unchanged. Other files are copied as they are, and `.git/` is skipped.
+Toffee refuses templates that contain symlinks and never writes through a
+symlink or outside the target directory. Remote templates are not supported.
+
 ## Quick start
 
 ### 1. Open your Terraform project
@@ -373,8 +458,8 @@ toffee info env dev
 variable and backend files can contain secrets.
 
 Environment names start with a letter or digit and contain only letters,
-digits, underscores, and hyphens; `config`, `diff`, `env`, and `info` are
-reserved. Files in `vars/` with other names are not listed as environments.
+digits, underscores, and hyphens; `config`, `diff`, `env`, `info`, and `new`
+are reserved. Files in `vars/` with other names are not listed as environments.
 Names must also be unique ignoring letter case, because macOS and Windows file
 systems usually treat `Prod.tfvars` and `prod.tfvars` as the same file.
 

@@ -7,11 +7,14 @@ import click
 from rich.console import Console
 
 from ..core import plans
+from ..core.backend import BackendError, read_settings
+from ..core.placeholders import PLACEHOLDER, placeholder_keys
 from ..core.safety import describe_backend
 from ..core.terraform import (
     bool_flag,
     flag_value,
     saved_plan_path,
+    split_flag,
     working_directory,
 )
 from ..core.text import printable
@@ -115,6 +118,9 @@ class TerraformCommands(BaseCommand):
         """Require a Toffee confirmation before changing protected targets."""
         working_dir = working_directory(global_args)
 
+        if command_name == "init":
+            return self._backends_are_filled_in(env_names, extra_args)
+
         if command_name == "plan":
             plan_out = flag_value(extra_args, "out")
             if plan_out:
@@ -154,6 +160,45 @@ class TerraformCommands(BaseCommand):
         ):
             return self._confirm_destroy(env_names, extra_args)
         return True
+
+    def _backends_are_filled_in(self, env_names: List[str], args: List[str]) -> bool:
+        """Stop init while a target's .tfbackend still holds the placeholder."""
+        if bool_flag(args, "backend") is False:
+            return True
+        supplied = set()
+        index = 0
+        while index < len(args):
+            flag = split_flag(args[index])
+            if flag and flag[0] == "backend-config":
+                value = flag[1]
+                if value is None and index + 1 < len(args):
+                    index += 1
+                    value = args[index]
+                key, separator, _ = (value or "").partition("=")
+                if not separator:
+                    # A supplemental file may set any of the missing values.
+                    return True
+                supplied.add(key.strip())
+            index += 1
+
+        filled_in = True
+        for name in env_names:
+            backend_file = self.env_manager.get_environment(name).backend_file
+            try:
+                keys = placeholder_keys(read_settings(backend_file))
+            except BackendError:
+                continue
+            keys = [key for key in keys if key not in supplied]
+            if keys:
+                error_console.print(
+                    f"Error: Replace {PLACEHOLDER} in "
+                    f"{printable(self.display_path(backend_file))} "
+                    f"({', '.join(keys)}) before running: toffee {name} init",
+                    markup=False,
+                    highlight=False,
+                )
+                filled_in = False
+        return filled_in
 
     def _confirm_protected(
         self,

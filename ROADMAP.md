@@ -9,6 +9,13 @@
 - **Simple environment diff:** Compare top-level variable and backend settings
   across environments while redacting sensitive values by default, with an
   `--exit-code` option for scripts.
+- **Project scaffolding:** `toffee new` writes one minimal built-in template
+  (`versions.tf`, `main.tf`, `variables.tf`, `outputs.tf`, `providers.tf`,
+  `data.tf`, `modules/`, `vars/<env>.tfvars` and `vars/<env>.tfbackend` with
+  a unique state key per environment, `.toffee.json`, and `.gitignore`), with
+  `--envs`, `--provider`, `--backend`, `--region`, `--name`, `--dry-run`,
+  `--agents` for an `AGENTS.md`, and `--template <local dir>` using explicit
+  `{{token}}` substitution. It never overwrites existing files.
 
 ## Planned
 
@@ -21,13 +28,9 @@
   committing to one policy engine.
 - **Optional cost estimates:** Integrate an external service such as Infracost
   for opt-in infrastructure cost estimation.
-- **Project scaffolding:** Add `toffee new` with one minimal built-in template:
-  `versions.tf`, `main.tf`, `variables.tf`, `outputs.tf`,
-  `vars/<env>.tfvars` and `vars/<env>.tfbackend` with a unique state key per
-  environment, `.toffee.json`, and `.gitignore`. Support `--envs`,
-  `--backend`, `--provider`, `--region`, `--template <local dir>`, and
-  `--dry-run`, substitute values with `string.Template`, never overwrite
-  existing files, and optionally write an `AGENTS.md` for AI tools.
+- **Remote project templates:** Let `toffee new --template` use templates
+  from git repositories or URLs. Only local template directories are
+  supported today.
 - **AI-agent interface:** Provide stable `--json` output and documented exit
   codes for plan, check, diff, and cost, plus an MCP server (`toffee mcp`)
   exposing read, plan, and check tools. It will never apply to protected

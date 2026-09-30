@@ -27,6 +27,7 @@ class TestEnvironmentManager:
             "config",
             "diff",
             "info",
+            "new",
         ]
         for name in invalid_names:
             valid, _ = EnvironmentManager.validate_env_name(name)
@@ -113,6 +114,11 @@ class TestEnvironmentManager:
         manager = EnvironmentManager(vars_dir=str(vars_dir))
         assert manager.get_environment_names() == []
 
-        (vars_dir / "new.tfvars").write_text("")
+        (vars_dir / "qa.tfvars").write_text("")
         manager.refresh_environments()
-        assert manager.get_environment_names() == ["new"]
+        assert manager.get_environment_names() == ["qa"]
+
+    def test_reserved_names_explain_the_rule(self):
+        valid, error = EnvironmentManager.validate_env_name("new")
+        assert valid is False
+        assert "reserved: config, diff, env, info, new" in error

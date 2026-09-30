@@ -122,6 +122,22 @@ class TestRealTerraform:
         assert "Running: terraform validate" in result.stderr
         assert "Unclosed configuration block" in result.stderr
 
+    def test_new_scaffold_initializes_and_validates(self, tmp_path):
+        scaffold = tmp_path / "scaffold"
+        scaffold.mkdir()
+
+        created = _toffee(
+            scaffold, "new", "--provider", "none", "--backend", "local",
+            "--envs", "dev,staging",
+        )
+        _assert_ok(created)
+        assert "toffee dev init" in created.stdout
+
+        for args in (["fmt", "-check", "-recursive"], ["init"], ["validate"], ["plan"]):
+            _assert_ok(_toffee(scaffold, "dev", *args))
+        _assert_ok(_toffee(scaffold, "staging", "init"))
+        assert (scaffold / ".toffee" / "terraform-data" / "staging").is_dir()
+
     def test_init_works_through_a_symlinked_project_path(self, project, tmp_path):
         project, _state_root = project
         # Like macOS /tmp -> /private/tmp: the logical and physical parents differ.

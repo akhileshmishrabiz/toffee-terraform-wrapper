@@ -282,6 +282,44 @@ class TestCLI:
         result = invoke("env", "create", "../bad")
         assert result.exit_code == 1
 
+    def test_new_is_a_command_not_an_environment(self, invoke, mock_terraform_log):
+        result = invoke("new", "--envs", "qa", "--dry-run")
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.startswith("Would create 3 files")
+        assert mock_terraform_log.read_text() == ""
+
+    def test_env_create_rejects_reserved_new(self, invoke, project_dir):
+        project, _, _ = project_dir
+        result = invoke("env", "create", "new")
+
+        assert result.exit_code == 1
+        assert "reserved" in result.stderr
+        assert not (project / "vars" / "new.tfvars").exists()
+
+    def test_new_adds_an_environment_to_an_existing_project(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+
+        main_tf = (project / "main.tf").read_text()
+
+        result = invoke("new", "--envs", "qa")
+        plan = invoke("qa", "plan")
+
+        assert result.exit_code == 0, result.output
+        assert "no .tf files were added" in result.stdout
+        assert sorted(path.name for path in project.glob("*.tf")) == ["main.tf"]
+        assert (project / "main.tf").read_text() == main_tf
+        assert not (project / "modules").exists()
+        # The root module declares only `environment`, so only it is set.
+        assert (project / "vars" / "qa.tfvars").read_text() == 'environment = "qa"\n'
+        assert (project / "vars" / "qa.tfbackend").read_text().endswith(
+            'path = "state/qa/terraform.tfstate"\n'
+        )
+        assert plan.exit_code == 0, plan.output
+        assert "qa.tfvars" in mock_terraform_log.read_text()
+
     def test_env_copy(self, invoke, project_dir):
         project, _, _ = project_dir
         result = invoke("env", "copy", "dev", "qa")
