@@ -5,7 +5,6 @@ Main CLI entrypoint for the Toffee CLI tool
 from typing import Optional
 
 import click
-from click.core import ParameterSource
 from rich.console import Console
 
 from . import __version__
@@ -16,7 +15,6 @@ from .commands.info import InfoCommands
 from .commands.new import NewCommand
 from .commands.terraform import TerraformCommands
 from .core.config import ConfigError
-from .core.scaffold import Options
 
 PASSTHROUGH_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
 
@@ -194,95 +192,22 @@ def diff_environments(
 
 
 @app.command("new")
-@click.argument("directory", required=False)
-@click.option(
-    "--name",
-    help="Project name used in state keys and tags.",
-    show_default="directory name",
+@click.argument(
+    "directory",
+    required=False,
+    metavar="[DIRECTORY]",
 )
-@click.option(
-    "--envs",
-    default="dev",
-    show_default=True,
-    help="Comma-separated environments to create. An existing project keeps "
-    "its environments.",
-)
-@click.option(
-    "--provider",
-    default="aws",
-    show_default=True,
-    metavar="[aws|google|azurerm|none]",
-    help="Cloud provider to configure.",
-)
-@click.option(
-    "--backend",
-    metavar="[s3|gcs|azurerm|local]",
-    help="Where Terraform keeps state.",
-    show_default="matches --provider",
-)
-@click.option(
-    "--region",
-    help="Region or location for the provider and state.",
-    show_default="the provider's usual region, such as us-east-1",
-)
-@click.option(
-    "--template",
-    metavar="DIR",
-    help="Copy this local template directory instead of the built-in one.",
-)
-@click.option(
-    "--agents",
-    is_flag=True,
-    help="Also write AGENTS.md with conventions for AI coding agents.",
-)
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Show what would be created without writing anything.",
-)
-@click.pass_context
-def new_project(
-    ctx: click.Context,
-    directory: Optional[str],
-    name: Optional[str],
-    envs: Optional[str],
-    provider: Optional[str],
-    backend: Optional[str],
-    region: Optional[str],
-    template: Optional[str],
-    agents: bool,
-    dry_run: bool,
-) -> None:
-    """Create a Terraform project set up for Toffee.
+def new_project(directory: Optional[str]) -> None:
+    """Create a minimal Terraform project for Toffee.
 
     \b
     Examples:
-      toffee new                          # scaffold the current directory
-      toffee new my-service --envs dev,prod
-      toffee new --provider google --region europe-west1 --dry-run
+      toffee new service
+      toffee new
 
-    Writes Terraform files, vars/<env>.tfvars and vars/<env>.tfbackend for
-    each environment, .toffee.json, and .gitignore into DIRECTORY (default:
-    the current directory). Existing files are never overwritten, so it is
-    safe to run again, for example to add an environment.
+    DIRECTORY defaults to the current directory.
     """
-
-    def given(value: Optional[str], parameter: str) -> Optional[str]:
-        # Unset defaults defer to values found in an existing project.
-        source = ctx.get_parameter_source(parameter)
-        return None if source is ParameterSource.DEFAULT else value
-
-    options = Options(
-        directory=directory,
-        name=name,
-        envs=given(envs, "envs"),
-        provider=given(provider, "provider"),
-        backend=backend,
-        region=region,
-        template=template,
-        agents=agents,
-    )
-    raise click.exceptions.Exit(get_new_command().run(options, dry_run))
+    raise click.exceptions.Exit(get_new_command().run(directory))
 
 
 @info_app.command("envs")

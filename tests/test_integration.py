@@ -126,21 +126,24 @@ class TestRealTerraform:
         scaffold = tmp_path / "scaffold"
         scaffold.mkdir()
 
-        created = _toffee(
-            scaffold,
-            "new",
-            "--provider",
-            "none",
-            "--backend",
-            "local",
-            "--envs",
-            "dev,staging",
-        )
+        created = _toffee(scaffold, "new")
         _assert_ok(created)
         assert "toffee dev init" in created.stdout
 
+        # Adapt a copy after generation so this real-Terraform smoke remains
+        # provider-free and never downloads AWS.
+        (scaffold / "versions.tf").write_text(
+            'terraform {\n  required_version = ">= 1.5"\n\n  backend "local" {}\n}\n'
+        )
+        (scaffold / "providers.tf").write_text("")
+        (scaffold / "data.tf").write_text("")
+        (scaffold / "vars/dev.tfbackend").write_text(
+            'path = "state/dev/terraform.tfstate"\n'
+        )
+
         for args in (["fmt", "-check", "-recursive"], ["init"], ["validate"], ["plan"]):
             _assert_ok(_toffee(scaffold, "dev", *args))
+        _assert_ok(_toffee(scaffold, "env", "copy", "dev", "staging"))
         _assert_ok(_toffee(scaffold, "staging", "init"))
         assert (scaffold / ".toffee" / "terraform-data" / "staging").is_dir()
 
