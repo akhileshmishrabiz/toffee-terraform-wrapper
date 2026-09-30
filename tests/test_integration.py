@@ -96,6 +96,32 @@ class TestRealTerraform:
         assert (state_root / "prod" / "terraform.tfstate").is_file()
         assert not (state_root / "dev" / "terraform.tfstate").exists()
 
+    def test_stateless_commands_run_without_a_backend_block(self, project):
+        project, _state_root = project
+        # init reads state, so it is refused here; this module needs no providers.
+        (project / "main.tf").write_text(
+            'variable "environment" {\n  type = string\n}\n\n'
+            'output "environment" {\n  value = var.environment\n}\n'
+        )
+
+        for args in (["fmt", "-check"], ["validate"], ["version"]):
+            _assert_ok(_toffee(project, "dev", *args))
+
+        plan = _toffee(project, "dev", "plan")
+        assert plan.returncode == 1
+        assert "No backend block was found" in plan.stderr
+
+    def test_syntax_error_is_reported_by_terraform(self, project):
+        project, _state_root = project
+        _assert_ok(_toffee(project, "dev", "init"))
+        (project / "broken.tf").write_text('resource "null_resource" "x" {\n')
+
+        result = _toffee(project, "dev", "validate")
+
+        assert result.returncode == 1
+        assert "Running: terraform validate" in result.stderr
+        assert "Unclosed configuration block" in result.stderr
+
     def test_init_works_through_a_symlinked_project_path(self, project, tmp_path):
         project, _state_root = project
         # Like macOS /tmp -> /private/tmp: the logical and physical parents differ.

@@ -48,8 +48,11 @@ class DiffCommands(BaseCommand):
                 try:
                     values.append(read_assignments(path))
                 except (OSError, UnicodeDecodeError, HCLError) as e:
+                    problem = "parse" if isinstance(e, HCLError) else "read"
                     error_console.print(
-                        f"Error: Cannot read {self.display_path(path)}: {e}",
+                        printable(
+                            f"Error: Cannot {problem} {self.display_path(path)}: {e}"
+                        ),
                         markup=False,
                         highlight=False,
                     )

@@ -13,7 +13,7 @@ from rich.markup import escape
 from rich.panel import Panel
 
 from ..core import hcl
-from ..core.backend import BackendError, find_backend, read_settings, settings_from_text
+from ..core.backend import BackendError, read_settings, same_state, settings_from_text
 from ..core.text import printable
 from .base import BaseCommand
 
@@ -58,8 +58,13 @@ class EnvCommands(BaseCommand):
         console.print(f"[bold green]Success:[/] Created environment '{name}'")
         console.print("Files created:")
         if env:
-            console.print(f"  - {env.vars_file}", markup=False)
-            console.print(f"  - {env.backend_file}", markup=False)
+            for path in (env.vars_file, env.backend_file):
+                console.print(
+                    printable(f"  - {path}"),
+                    markup=False,
+                    highlight=False,
+                    soft_wrap=True,
+                )
 
         vars_file = escape(printable(env.vars_file)) if env else name
         backend_file = escape(printable(env.backend_file)) if env else name
@@ -169,7 +174,12 @@ class EnvCommands(BaseCommand):
         )
         console.print("Files created:")
         for _source_path, target_path, _content in planned:
-            console.print(f"  - {target_path}", markup=False, highlight=False)
+            console.print(
+                printable(f"  - {target_path}"),
+                markup=False,
+                highlight=False,
+                soft_wrap=True,
+            )
         if rewrites:
             console.print(f"Rewrote references to '{source}':")
             for path, line, old, new in rewrites:
@@ -177,6 +187,7 @@ class EnvCommands(BaseCommand):
                     printable(f"  {self.display_path(path)}:{line}: {old} -> {new}"),
                     markup=False,
                     highlight=False,
+                    soft_wrap=True,
                 )
         else:
             console.print(f"No references to '{source}' were rewritten.")
@@ -188,36 +199,37 @@ class EnvCommands(BaseCommand):
 
     def _copy_keeps_state_separate(self, target: str, backend_text: str) -> bool:
         try:
-            backend = find_backend(self.project_dir)
-            identity = self.state_identity(
-                backend, target, settings_from_text(backend_text), self.project_dir
-            )
-            for other in self.env_manager.get_environment_names():
-                other_env = self.env_manager.get_environment(other)
-                if other == target or not os.path.isfile(other_env.backend_file):
-                    continue
-                other_identity = self.state_identity(
-                    backend,
-                    other,
-                    read_settings(other_env.backend_file),
-                    self.project_dir,
-                )
-                if other_identity == identity:
-                    self.print_shared_state(
-                        target, other, identity, backend, self.project_dir
-                    )
-                    error_console.print(
-                        "Nothing was written. Copy the files manually and change "
-                        f"the state location, or run: toffee env create {target}"
-                    )
-                    return False
-        except (BackendError, hcl.HCLError) as e:
+            settings = settings_from_text(backend_text)
+        except hcl.HCLError as e:
             error_console.print(
                 f"Error: Cannot verify that '{target}' would use separate state: {e}",
                 markup=False,
                 highlight=False,
             )
             return False
+        backend = self.load_backend(self.project_dir)
+        identity = self.state_identity(backend, target, settings, self.project_dir)
+        for other in self.env_manager.get_environment_names():
+            other_env = self.env_manager.get_environment(other)
+            if other == target or not os.path.isfile(other_env.backend_file):
+                continue
+            try:
+                other_settings = read_settings(other_env.backend_file)
+            except BackendError as e:
+                self.warn_unreadable_peer(other_env.backend_file, e)
+                continue
+            other_identity = self.state_identity(
+                backend, other, other_settings, self.project_dir
+            )
+            if same_state(other_identity, identity):
+                self.print_shared_state(
+                    target, other, identity, backend, self.project_dir
+                )
+                error_console.print(
+                    "Nothing was written. Copy the files manually and change "
+                    f"the state location, or run: toffee env create {target}"
+                )
+                return False
         return True
 
     @staticmethod

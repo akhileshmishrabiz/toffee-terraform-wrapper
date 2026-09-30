@@ -80,6 +80,11 @@ def parse(text: str) -> List[Item]:
             value_start = assignment.end()
             value_end = _expression_end(scanned, value_start, assignment.group(1))
             raw = scanned.code[value_start:value_end]
+            if not raw.strip():
+                raise HCLError(
+                    f"missing value for '{assignment.group(1)}' on line "
+                    f"{_line(text, position)}"
+                )
             items.append(
                 Item(
                     key=assignment.group(1),

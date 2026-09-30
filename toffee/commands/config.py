@@ -13,7 +13,7 @@ from ..core.config import (
     DEFAULT_CONFIG,
     PROJECT_CONFIG_NAME,
     ConfigError,
-    is_bare_executable_name,
+    is_project_terraform_name,
     read_config_file,
     untrusted_terraform_path_error,
     validate_value,
@@ -88,7 +88,7 @@ class ConfigCommands(BaseCommand):
         if problem:
             error_console.print(f"Error: {problem}", markup=False)
             return 1
-        if project and key == "terraform_path" and not is_bare_executable_name(value):
+        if project and key == "terraform_path" and not is_project_terraform_name(value):
             error_console.print(
                 f"Error: {untrusted_terraform_path_error(value)}", markup=False
             )

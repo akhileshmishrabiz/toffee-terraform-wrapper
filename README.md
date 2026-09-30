@@ -293,16 +293,27 @@ it by editing the file rather than with `toffee config set`.
 
 A saved plan changes the state it was planned against, whichever environment
 you name when applying it. When `toffee <env> plan -out=FILE` succeeds, Toffee
-writes `FILE.toffee.json` next to the plan with the environment name and the
-plan's SHA-256 hash. Then `toffee <env> apply FILE`:
+writes `FILE.toffee.json` next to the plan with the environment name, the
+plan's SHA-256 hash, and an HMAC-SHA256 signature over both. The signature uses
+a random key private to your user account, `~/.toffee/plan-signing.key`, which
+Toffee creates with `0600` permissions the first time it records a plan. Then
+`toffee <env> apply FILE`:
 
 - refuses if the plan was created for a different environment, or if the plan
   file changed after it was recorded;
 - asks for the protected confirmation if the plan belongs to a protected
   environment;
-- asks for the protected confirmation if the plan has no record and the
-  project has any protected environment, because its origin cannot be
-  verified.
+- asks for the protected confirmation, noting that the plan's origin cannot be
+  verified, if the project has any protected environment and the plan has no
+  record or its record's signature does not verify. That includes a record
+  that was edited by hand, has no signature, or was signed by another user or
+  machine, and the case where the key is missing or readable by other users.
+
+A signature is only valid for the user and machine that created it, so a plan
+copied to another machine or CI job is unverified there and needs the
+protected confirmation. That is the intended safe default. If Toffee cannot
+create the key (for example because `HOME` is read-only), `plan -out` still
+succeeds but prints a warning and writes no record.
 
 `plan -out` and saved-plan `apply` accept only one target, since environments
 would otherwise overwrite or share one plan file. Relative plan paths are
@@ -310,11 +321,11 @@ resolved against `-chdir` when it is given.
 
 ### Separate state per environment
 
-Before running Terraform, Toffee refuses to continue if a target would share
-state with any other environment. It reads the backend type from the root
-module's `.tf` and `.tf.json` files (in the `-chdir` directory, if given) and
-compares the settings that select the state object, together with the
-workspace selected for that environment:
+Before running a Terraform command that can read or write state, Toffee
+refuses to continue if a target would share state with any other environment.
+It reads the backend type from the root module's `.tf` and `.tf.json` files
+(in the `-chdir` directory, if given) and compares the settings that select the
+state object, together with the workspace selected for that environment:
 
 | Backend | Compared settings |
 | --- | --- |
@@ -332,8 +343,22 @@ workspace selected for that environment:
 Toffee also refuses to run when an environment's `.tfvars` or `.tfbackend`
 file resolves, for example through a symlink, to another environment's file.
 A root module without a backend block keeps every environment in the same
-default local state, so Toffee refuses to run it while more than one
+default local state, so Toffee refuses state commands there while more than one
 environment has a backend file.
+
+Commands that never touch state skip the comparison: `fmt`, `validate`,
+`version` (and `-version`), `get`, `modules`, `metadata`, `providers lock`,
+`providers mirror`, `login`, `logout`, and any command given `-h`, `-help`, or
+`--help`. Everything else is compared, including `init`, `providers`,
+`providers schema` (both read state), and commands Toffee does not know.
+
+If Toffee cannot parse the root module, for example because of a syntax error,
+it prints a warning and compares every non-credential setting in the
+environments' `.tfbackend` files instead, and the protected confirmation shows
+`Backend: unknown (could not parse configuration)`. Terraform then reports the
+syntax error itself. Another environment's `.tfbackend` file that cannot be
+parsed is left out of the comparison with a warning naming the file. A
+target's own unparsable `.tfbackend` still stops state commands.
 
 ## Environment management
 
@@ -370,8 +395,9 @@ toffee diff dev prod
 This compares the top-level mappings in both environments' `.tfvars` and
 `.tfbackend` files without running Terraform. Only changed settings are shown.
 Comments (`#`, `//`, `/* */`) are ignored and heredoc bodies are compared as
-values. A file with an unterminated string, heredoc, comment, or block is
-reported as an error instead of being guessed at.
+values. A file with an unterminated string, heredoc, comment, or block, or an
+assignment without a value such as `x =`, is reported as a parse error instead
+of being guessed at.
 
 Values are redacted by default when the setting's name looks sensitive (for
 example `password`, `db_pass`, `api_key`, `token`, `auth`, `conn_str`,
@@ -417,11 +443,14 @@ types: `auto_approve` and `verbose` must be `true` or `false` (not the string
 reported as an error and Toffee exits without running anything. `config set`
 never overwrites a file it could not parse, and it reports a failure if the
 file cannot be written. `~/.toffee/` is only created when you save global
-configuration.
+configuration or record a saved plan.
 
 Because `.toffee.json` usually arrives with a cloned repository, it may set
-`terraform_path` only to a bare executable name that is looked up on `PATH`,
-such as `terraform` or `tofu`. Set an explicit path in
+`terraform_path` only to `terraform`, `tofu`, or `opentofu`, optionally
+followed by a version such as `terraform1.9` or `tofu-1.8.3`, looked up on
+`PATH`. Any other name is refused, because a name such as `sh` or `python`
+would run a file from the repository (for example one named `plan`) in place
+of Terraform. Set any other executable or an explicit path in
 `~/.toffee/config.json`, or with the `TOFFEE_TERRAFORM_PATH` environment
 variable, which takes precedence over both files:
 
@@ -436,13 +465,13 @@ TOFFEE_TERRAFORM_PATH=/opt/terraform/1.9/terraform toffee dev plan
 - Sequential multi-environment execution stops on the first failure (exit code
   2 with `-detailed-exitcode` is not a failure).
 - Each environment must have both its `.tfvars` and `.tfbackend` file.
-- Backend metadata is isolated per environment, and environments that would
-  share state are refused.
+- Backend metadata is isolated per environment, and state commands for
+  environments that would share state are refused.
 - State-changing commands against protected environments require a separate
   Toffee confirmation that neither `-auto-approve` nor `auto_approve` bypasses.
-- Saved plans recorded by Toffee are only applied to the environment they were
-  created for; unrecorded plans require the protected confirmation when the
-  project has a protected environment.
+- Saved plans with a record signed by your key are only applied to the
+  environment they were created for; plans without a verifiable record require
+  the protected confirmation when the project has a protected environment.
 - Destruction, including `apply -destroy`, requires confirmation unless
   `-auto-approve` is supplied on the command line.
 - Interactive commands cannot run concurrently, and parallel commands never

@@ -6,7 +6,7 @@ import stat
 
 import pytest
 
-from toffee.core.config import Config, ConfigError
+from toffee.core.config import Config, ConfigError, is_project_terraform_name
 from toffee.core.environment import EnvironmentManager
 
 
@@ -102,14 +102,49 @@ class TestTerraformPathTrust:
         result = invoke("info", "version")
 
         assert result.exit_code == 1
-        assert "can only name an executable on PATH" in result.stderr
+        assert "can only choose terraform, tofu, opentofu" in result.stderr
         assert not marker.exists()
 
-    @pytest.mark.parametrize("value", ["./terraform", "bin/terraform", ".."])
-    def test_relative_paths_are_explicit_paths(self, value):
-        from toffee.core.config import is_bare_executable_name
+    def test_project_cannot_choose_an_interpreter(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        marker = project / "ran"
+        (project / "plan").write_text(f"touch {marker}\n")
+        _write_project(project, '{"terraform_path": "sh"}')
 
-        assert not is_bare_executable_name(value)
+        result = invoke("dev", "plan", extra_env={"TOFFEE_TERRAFORM_PATH": ""})
+
+        assert result.exit_code == 1
+        assert "sets terraform_path to 'sh'" in result.stderr
+        assert "~/.toffee/config.json or the TOFFEE_TERRAFORM_PATH" in result.stderr
+        assert not marker.exists()
+        assert mock_terraform_log.read_text() == ""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "./terraform",
+            "bin/terraform",
+            "..",
+            "sh",
+            "bash",
+            "python3",
+            "env",
+            "terraform-wrapper",
+            "terraform.sh",
+            "Terraform",
+            "terraform1.9/",
+        ],
+    )
+    def test_only_terraform_names_are_allowed_in_projects(self, value):
+        assert not is_project_terraform_name(value)
+
+    @pytest.mark.parametrize(
+        "value", ["terraform", "tofu", "opentofu", "terraform1.9", "tofu-1.8.3"]
+    )
+    def test_terraform_names_with_versions_are_allowed(self, value):
+        assert is_project_terraform_name(value)
 
     def test_project_may_name_an_executable(self, invoke, project_dir):
         project, _, env = project_dir
@@ -148,8 +183,30 @@ class TestTerraformPathTrust:
         result = invoke("config", "set", "terraform_path", "/opt/tf", "--project")
 
         assert result.exit_code == 1
-        assert "can only name an executable on PATH" in result.stderr
+        assert "can only choose terraform, tofu, opentofu" in result.stderr
         assert (project / ".toffee.json").read_text() == before
+
+    def test_config_set_project_refuses_interpreter(self, invoke, project_dir):
+        project, _, _ = project_dir
+        before = (project / ".toffee.json").read_text()
+
+        result = invoke("config", "set", "terraform_path", "sh", "--project")
+
+        assert result.exit_code == 1
+        assert "sets terraform_path to 'sh'" in result.stderr
+        assert (project / ".toffee.json").read_text() == before
+
+    def test_global_config_may_use_any_executable_name(
+        self, invoke, project_dir, isolated_home
+    ):
+        project, _, _ = project_dir
+        _write_project(project, "{}")
+        _write_global(isolated_home, '{"terraform_path": "my-terraform-wrapper"}')
+
+        result = invoke("config", "show", extra_env={"TOFFEE_TERRAFORM_PATH": ""})
+
+        assert result.exit_code == 0
+        assert "my-terraform-wrapper" in result.stdout
 
     def test_config_set_global_accepts_explicit_path(self, invoke, isolated_home):
         result = invoke("config", "set", "terraform_path", "/opt/tf/terraform")

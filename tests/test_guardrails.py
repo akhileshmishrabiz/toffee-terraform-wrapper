@@ -2,8 +2,12 @@
 
 import json
 import os
+import stat
+import sys
 
 import pytest
+
+from toffee.core import plans
 
 
 def _log(log_file):
@@ -297,7 +301,7 @@ class TestSavedPlans:
         accepted = invoke("dev", "apply", "manual.tfplan", input="y\n")
 
         assert closed.exit_code == 1
-        assert "cannot verify which environment" in closed.stderr
+        assert "cannot be verified: it has no Toffee record" in closed.stderr
         assert "Continue? [y/N]" in closed.stderr
         assert accepted.exit_code == 0
         assert _log(mock_terraform_log).splitlines()[-1].endswith(
@@ -331,7 +335,7 @@ class TestSavedPlans:
         assert failed.exit_code == 1
         assert not (project / "tfplan.toffee.json").exists()
         assert result.exit_code == 1
-        assert "cannot verify which environment" in result.stderr
+        assert "cannot be verified" in result.stderr
 
     def test_detailed_exitcode_changes_still_record_plan(self, invoke, project_dir):
         project, _, _ = project_dir
@@ -374,15 +378,141 @@ class TestSavedPlans:
         sub.mkdir()
         (sub / "main.tf").write_text('terraform {\n  backend "local" {}\n}\n')
         (sub / "tfplan").write_bytes(b"PK\x03\x04plan")
-        (sub / "tfplan.toffee.json").write_text(
-            json.dumps({"environment": "prod", "sha256": "0" * 64})
-        )
+        plans.write_record(str(sub / "tfplan"), "prod")
 
         result = invoke("dev", "-chdir=sub", "apply", "tfplan")
 
         assert result.exit_code == 1
         assert "created for environment 'prod'" in result.stderr
         assert _log(mock_terraform_log) == ""
+
+    def test_record_is_signed_with_private_user_key(
+        self, invoke, project_dir, isolated_home
+    ):
+        project, _, _ = project_dir
+
+        assert invoke("dev", "plan", "-out=tfplan").exit_code == 0
+
+        key_file = isolated_home / ".toffee" / "plan-signing.key"
+        assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
+        assert len(self._record(project)["signature"]) == 64
+        assert key_file.read_text().strip() not in (
+            project / "tfplan.toffee.json"
+        ).read_text()
+
+    def test_signing_key_is_reused(self, invoke, isolated_home):
+        assert invoke("dev", "plan", "-out=a.tfplan").exit_code == 0
+        key = (isolated_home / ".toffee" / "plan-signing.key").read_text()
+        assert invoke("dev", "plan", "-out=b.tfplan").exit_code == 0
+
+        assert (isolated_home / ".toffee" / "plan-signing.key").read_text() == key
+
+    def test_forged_record_requires_confirmation(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        assert invoke("prod", "plan", "-out=tfplan").exit_code == 0
+        record = self._record(project)
+        record["environment"] = "dev"
+        (project / "tfplan.toffee.json").write_text(json.dumps(record))
+
+        result = invoke("dev", "apply", "tfplan", input="")
+
+        assert result.exit_code == 1
+        assert "tfplan cannot be verified" in result.stderr
+        assert "not signed with this user's plan-signing key" in result.stderr
+        assert "Continue? [y/N]" in result.stderr
+        assert " apply" not in _log(mock_terraform_log)
+
+    @pytest.mark.parametrize("signature", [None, "", "0" * 64, "é" * 64, 7])
+    def test_unsigned_or_badly_signed_record_is_not_trusted(
+        self, invoke, project_dir, mock_terraform_log, signature
+    ):
+        project, _, _ = project_dir
+        assert invoke("dev", "plan", "-out=tfplan").exit_code == 0
+        record = self._record(project)
+        if signature is None:
+            del record["signature"]
+        else:
+            record["signature"] = signature
+        (project / "tfplan.toffee.json").write_text(json.dumps(record))
+
+        result = invoke("dev", "apply", "tfplan", input="")
+
+        assert result.exit_code == 1
+        assert "cannot be verified" in result.stderr
+        assert "Continue? [y/N]" in result.stderr
+        assert " apply" not in _log(mock_terraform_log)
+
+    def test_record_from_another_key_is_not_trusted(
+        self, invoke, project_dir, isolated_home, mock_terraform_log
+    ):
+        assert invoke("dev", "plan", "-out=tfplan").exit_code == 0
+        (isolated_home / ".toffee" / "plan-signing.key").write_text("ab" * 32)
+
+        result = invoke("dev", "apply", "tfplan", input="")
+
+        assert result.exit_code == 1
+        assert "not signed with this user's plan-signing key" in result.stderr
+        assert " apply" not in _log(mock_terraform_log)
+
+    def test_missing_key_makes_record_unverified(
+        self, invoke, project_dir, isolated_home, mock_terraform_log
+    ):
+        assert invoke("dev", "plan", "-out=tfplan").exit_code == 0
+        (isolated_home / ".toffee" / "plan-signing.key").unlink()
+
+        result = invoke("dev", "apply", "tfplan", input="")
+
+        assert result.exit_code == 1
+        assert "plan-signing key is unavailable" in result.stderr
+        assert " apply" not in _log(mock_terraform_log)
+        assert not (isolated_home / ".toffee" / "plan-signing.key").exists()
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+    def test_key_readable_by_others_is_not_trusted(
+        self, invoke, project_dir, isolated_home, mock_terraform_log
+    ):
+        assert invoke("dev", "plan", "-out=tfplan").exit_code == 0
+        (isolated_home / ".toffee" / "plan-signing.key").chmod(0o644)
+
+        result = invoke("dev", "apply", "tfplan", input="")
+
+        assert result.exit_code == 1
+        assert "accessible by other users" in result.stderr
+        assert " apply" not in _log(mock_terraform_log)
+
+    def test_signed_record_without_protected_environments_runs(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        for name in ("prod.tfvars", "prod.tfbackend"):
+            (project / "vars" / name).unlink()
+        assert invoke("dev", "plan", "-out=tfplan").exit_code == 0
+
+        result = invoke("dev", "apply", "tfplan")
+
+        assert result.exit_code == 0
+        assert "Continue?" not in result.stderr
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+    def test_unwritable_home_leaves_plan_unrecorded(
+        self, invoke, project_dir, isolated_home, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        isolated_home.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            planned = invoke("dev", "plan", "-out=tfplan")
+            applied = invoke("dev", "apply", "tfplan", input="")
+        finally:
+            isolated_home.chmod(stat.S_IRWXU)
+
+        assert planned.exit_code == 0
+        assert "Could not record the plan's environment" in planned.stderr
+        assert not (project / "tfplan.toffee.json").exists()
+        assert applied.exit_code == 1
+        assert "it has no Toffee record" in applied.stderr
+        assert " apply" not in _log(mock_terraform_log)
 
 
 class TestStateIsolation:
@@ -450,6 +580,179 @@ class TestStateIsolation:
         (data_dir / "environment").write_text("staging")
 
         assert invoke("staging", "plan").exit_code == 0
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["fmt", "-check"],
+            ["validate"],
+            ["version"],
+            ["-version"],
+            ["get"],
+            ["modules", "-json"],
+            ["metadata", "functions", "-json"],
+            ["providers", "lock"],
+            ["providers", "mirror", "mirror-dir"],
+            ["logout"],
+            ["plan", "-help"],
+            ["-help"],
+            ["apply", "-auto-approve", "--help"],
+            ["state", "list", "-h"],
+        ],
+    )
+    def test_stateless_commands_run_without_a_backend_block(
+        self, invoke, project_dir, mock_terraform_log, args
+    ):
+        project, _, _ = project_dir
+        main = project / "main.tf"
+        main.write_text(main.read_text().replace('backend "local" {}', ""))
+
+        result = invoke("dev", *args)
+
+        assert result.exit_code == 0, result.output
+        assert "would share Terraform state" not in result.stderr
+        assert len(_log(mock_terraform_log).splitlines()) == 1
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["plan"],
+            ["init"],
+            ["output"],
+            ["console"],
+            ["providers"],
+            ["providers", "schema", "-json"],
+            ["workspace", "list"],
+            ["some-future-command"],
+        ],
+    )
+    def test_state_commands_are_refused_without_a_backend_block(
+        self, invoke, project_dir, mock_terraform_log, args
+    ):
+        project, _, _ = project_dir
+        main = project / "main.tf"
+        main.write_text(main.read_text().replace('backend "local" {}', ""))
+
+        result = invoke("dev", *args)
+
+        assert result.exit_code == 1
+        assert "No backend block was found" in result.stderr
+        assert _log(mock_terraform_log) == ""
+
+    def test_root_syntax_error_does_not_block_stateless_commands(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "broken.tf").write_text('resource "null_resource" "x" {\n')
+
+        result = invoke("dev", "validate")
+
+        assert result.exit_code == 0
+        assert result.stderr.count("Warning") == 0
+        assert " validate" in _log(mock_terraform_log)
+
+    def test_root_syntax_error_compares_backend_assignments(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "broken.tf").write_text('resource "null_resource" "x" {\n')
+
+        result = invoke("dev", "plan")
+
+        assert result.exit_code == 0
+        assert "Cannot parse the root module" in result.stderr
+        assert "broken.tf" in result.stderr
+        assert " plan " in _log(mock_terraform_log)
+
+    def test_root_syntax_error_still_refuses_identical_backend_settings(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "broken.tf").write_text('resource "null_resource" "x" {\n')
+        (project / "vars" / "staging.tfbackend").write_text(
+            'path = ".terraform-state/prod/terraform.tfstate"\n'
+            'password = "differs"\n'
+        )
+
+        result = invoke("staging", "plan")
+
+        assert result.exit_code == 1
+        assert "'staging' and 'prod' would share Terraform state" in result.stderr
+        assert "differs" not in result.stderr
+        assert _log(mock_terraform_log) == ""
+
+    def test_root_syntax_error_prompt_shows_unknown_backend(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "broken.tf").write_text('resource "null_resource" "x" {\n')
+
+        result = invoke("prod", "apply", input="")
+
+        assert result.exit_code == 1
+        assert "Backend: unknown (could not parse configuration)" in result.stderr
+        assert _log(mock_terraform_log) == ""
+
+    def test_unparsable_peer_backend_is_ignored_with_warning(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "vars" / "prod.tfbackend").write_text('path = "unterminated\n')
+
+        result = invoke("dev", "plan")
+
+        assert result.exit_code == 0
+        assert "Warning: Ignoring vars/prod.tfbackend" in result.stderr
+        assert " plan " in _log(mock_terraform_log)
+
+    def test_unparsable_target_backend_is_refused_for_state_commands(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfbackend").write_text("path =\n")
+
+        refused = invoke("dev", "plan")
+        validated = invoke("dev", "validate")
+
+        assert refused.exit_code == 1
+        assert "Cannot verify that environments use separate state" in (
+            refused.stderr
+        )
+        assert "missing value for 'path'" in refused.stderr
+        assert validated.exit_code == 0
+        assert _log(mock_terraform_log).splitlines()[0].endswith("validate")
+
+    def test_shared_state_error_keeps_path_case(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        for env in ("staging", "prod"):
+            (project / "vars" / f"{env}.tfbackend").write_text(
+                'path = "State/Shared.tfstate"\n'
+            )
+
+        result = invoke("staging", "plan")
+
+        assert result.exit_code == 1
+        assert "State/Shared.tfstate" in result.stderr
+        assert os.path.realpath(project) in result.stderr
+
+    @pytest.mark.skipif(
+        sys.platform not in ("darwin", "win32"), reason="case-insensitive default"
+    )
+    def test_local_paths_differing_by_case_share_state(
+        self, invoke, project_dir, mock_terraform_log
+    ):
+        project, _, _ = project_dir
+        (project / "vars" / "staging.tfbackend").write_text(
+            'path = ".terraform-state/PROD/terraform.tfstate"\n'
+        )
+
+        result = invoke("staging", "plan")
+
+        assert result.exit_code == 1
+        assert ".terraform-state/PROD/terraform.tfstate" in result.stderr
+        assert _log(mock_terraform_log) == ""
 
 
 class TestEnvironmentCopySafety:

@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 
 class TestCLI:
     def test_version(self, invoke):
@@ -140,6 +142,22 @@ class TestCLI:
         assert result.exit_code == 1
         assert "unterminated value for 'tags'" in result.stderr
 
+    def test_diff_reports_missing_value_as_parse_error(self, invoke, project_dir):
+        project, _, _ = project_dir
+        (project / "vars" / "prod.tfvars").write_text('environment = "prod"\nx = \n')
+
+        result = invoke("diff", "dev", "prod", "--exit-code")
+        default = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 2
+        assert (
+            "Error: Cannot parse vars/prod.tfvars: missing value for 'x' on line 2"
+            in result.stderr
+        )
+        assert "differences" not in result.stdout
+        assert default.exit_code == 1
+        assert "Traceback" not in default.output
+
     def test_plan_single_env(self, invoke, mock_terraform_log):
         result = invoke("dev", "plan")
         assert result.exit_code == 0
@@ -271,6 +289,24 @@ class TestCLI:
         assert (project / "vars" / "qa.tfvars").is_file()
         content = (project / "vars" / "qa.tfvars").read_text()
         assert 'environment = "qa"' in content or "qa" in content
+
+    @pytest.mark.parametrize("command", [["copy", "dev", "qa"], ["create", "qa"]])
+    def test_env_created_paths_are_not_wrapped(self, invoke, project_dir, command):
+        project, _, _ = project_dir
+        vars_dir = project / ("environment-files-" * 6)
+        vars_dir.mkdir()
+        for name in ("dev.tfvars", "dev.tfbackend"):
+            (vars_dir / name).write_text((project / "vars" / name).read_text())
+        (project / ".toffee.json").write_text(
+            json.dumps({"vars_dir": vars_dir.name, "terraform_path": "terraform"})
+        )
+
+        result = invoke("env", *command)
+
+        assert result.exit_code == 0, result.output
+        assert len(str(vars_dir / "qa.tfvars")) > 80
+        lines = result.stdout.splitlines()
+        assert f"  - {vars_dir / 'qa.tfvars'}" in lines
 
     def test_config_set_project(self, invoke, project_dir):
         project, _, _ = project_dir

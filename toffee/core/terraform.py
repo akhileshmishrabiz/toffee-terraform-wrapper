@@ -29,6 +29,45 @@ VALUE_FLAGS = frozenset(
 )
 
 
+# Commands that never read or write Terraform state. Every other command,
+# including unknown and future ones, is treated as using state.
+STATELESS_COMMANDS = frozenset(
+    {
+        "fmt",
+        "get",
+        "login",
+        "logout",
+        "metadata",
+        "modules",
+        "validate",
+        "version",
+        "-v",
+        "-version",
+        "--version",
+    }
+)
+# Bare `providers` and `providers schema` read state to list its providers.
+STATELESS_SUBCOMMANDS = {"providers": frozenset({"lock", "mirror"})}
+# Terraform prints usage instead of running when any argument before "--" is
+# one of these, wherever it appears.
+HELP_FLAGS = frozenset({"-h", "-help", "--help"})
+
+
+def uses_state(
+    command_name: str, args: Sequence[str], global_args: Sequence[str] = ()
+) -> bool:
+    """Return whether a Terraform invocation may read or write state."""
+    argv = [*global_args, command_name, *args]
+    if "--" in argv:
+        argv = argv[: argv.index("--")]
+    if HELP_FLAGS.intersection(argv):
+        return False
+    if command_name in STATELESS_COMMANDS:
+        return False
+    subcommands = STATELESS_SUBCOMMANDS.get(command_name)
+    return not (subcommands and args and args[0] in subcommands)
+
+
 def split_flag(arg: str) -> Optional[Tuple[str, Optional[str]]]:
     """Split ``-name=value`` or ``--name`` into its name and optional value."""
     if not arg.startswith("-") or arg in ("-", "--"):

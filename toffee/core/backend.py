@@ -64,6 +64,18 @@ class Backend:
     source: str
 
 
+# Stands in for a root module whose configuration could not be parsed.
+UNKNOWN_BACKEND = Backend("unknown", {}, "")
+
+
+def find_backend_or_unknown(root_dir: str) -> Tuple[Optional[Backend], Optional[str]]:
+    """Return the root module's backend, or UNKNOWN_BACKEND and the reason."""
+    try:
+        return find_backend(root_dir), None
+    except BackendError as e:
+        return UNKNOWN_BACKEND, str(e)
+
+
 def find_backend(root_dir: str) -> Optional[Backend]:
     """Return the backend or cloud block declared by the root module."""
     try:
@@ -133,7 +145,15 @@ def state_identity(
     root_dir: str,
     workspace: str = DEFAULT_WORKSPACE,
 ) -> Identity:
-    """Return a value that is equal for two environments sharing state."""
+    """Return a value that, compared with same_state(), matches for two
+    environments sharing state."""
+    if backend is UNKNOWN_BACKEND:
+        # The workspace is ignored because it may not separate this backend.
+        return (("backend", backend.type),) + tuple(
+            (name, value)
+            for name, value in sorted(_flatten(env_settings).items())
+            if not is_sensitive_key(name.rsplit(".", 1)[-1])
+        )
     if backend is None:
         # Without a backend block Terraform ignores -backend-config entirely.
         return (
@@ -165,6 +185,20 @@ def state_identity(
     return tuple(identity)
 
 
+def same_state(first: Identity, second: Identity) -> bool:
+    return _comparable(first) == _comparable(second)
+
+
+def _comparable(identity: Identity) -> Identity:
+    # macOS and Windows file systems are case-insensitive by default.
+    if identity[0] != ("backend", "local") or sys.platform not in ("darwin", "win32"):
+        return identity
+    return tuple(
+        (name, value.casefold() if value and name in _LOCAL_PATH_SETTINGS else value)
+        for name, value in identity
+    )
+
+
 def describe_identity(identity: Identity) -> str:
     """Summarize a state identity without secret values."""
     backend_type = identity[0][1]
@@ -186,6 +220,8 @@ def describe(
     """Return a concise backend destination without exposing credentials."""
     if backend is None:
         return "local://terraform.tfstate (no backend block in the root module)"
+    if backend is UNKNOWN_BACKEND:
+        return "unknown (could not parse configuration)"
 
     settings = {**backend.settings, **env_settings}
 
@@ -322,11 +358,7 @@ def _flatten(settings: Dict[str, object], prefix: str = "") -> Dict[str, str]:
 
 
 def _local_path(root_dir: str, path: str) -> str:
-    resolved = os.path.normpath(os.path.join(os.path.realpath(root_dir), path))
-    # macOS and Windows file systems are case-insensitive by default.
-    if sys.platform in ("darwin", "win32"):
-        resolved = resolved.casefold()
-    return resolved
+    return os.path.normpath(os.path.join(os.path.realpath(root_dir), path))
 
 
 def _uri(scheme: str, container: Optional[str], path: Optional[str]) -> str:

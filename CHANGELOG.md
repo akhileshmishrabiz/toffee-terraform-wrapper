@@ -17,7 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add the `protected_environments` project setting to protect more environment
   names in addition to `prod` and `production`.
 - Record the environment and SHA-256 of every saved plan written by
-  `toffee <env> plan -out=FILE` in `FILE.toffee.json`.
+  `toffee <env> plan -out=FILE` in `FILE.toffee.json`, signed with a per-user
+  key in `~/.toffee/plan-signing.key`.
 - Add `toffee diff --exit-code`, which exits with 1 when environments differ
   and 2 on errors.
 - Add the `TOFFEE_TERRAFORM_PATH` environment variable to choose the Terraform
@@ -54,11 +55,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reject empty or whitespace-only arguments, which let
   `toffee prod "" apply` skip the production confirmation.
 - Refuse to apply a saved plan through an environment other than the one it
-  was created for, or after the plan file changed. Plans without a Toffee
-  record require the protected confirmation when the project has a protected
-  environment.
-- Refuse to run when a target shares backend state with another environment,
-  or when its files resolve to another environment's files.
+  was created for, or after the plan file changed. Plan records are
+  authenticated with an HMAC over the environment name and plan hash, using a
+  random `0600` key in `~/.toffee/`. Plans without a record, or whose record
+  was edited, is unsigned, or was signed by another user or machine, require
+  the protected confirmation when the project has a protected environment.
+- Refuse to run commands that can read or write state when a target shares
+  backend state with another environment, and refuse any command when its
+  files resolve to another environment's files. Commands that never touch
+  state (such as `fmt`, `validate`, `version`, `providers lock`, and any
+  `-help`) are not blocked by shared state. If the root module cannot be
+  parsed, environments are compared by their non-credential backend settings
+  and Terraform reports the syntax error; another environment's unparsable
+  `.tfbackend` is skipped with a warning. Local state paths are compared
+  case-insensitively on macOS and Windows but shown in their original case.
 - `env copy` and `env create` refuse names that differ only by case from an
   existing environment, which overwrote `prod` on case-insensitive file
   systems, and never write through symlinks.
@@ -72,15 +82,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as bidirectional overrides, before printing values.
 - The `Running:` status line hides `-var` values and inline `-backend-config`
   `key=value` values, and no longer interprets arguments as Rich markup.
-- A project `.toffee.json` can set `terraform_path` only to a bare executable
-  name on `PATH`, so a cloned repository can no longer choose which binary
-  Toffee runs. Explicit paths must come from `~/.toffee/config.json` or
-  `TOFFEE_TERRAFORM_PATH`.
+- A project `.toffee.json` can set `terraform_path` only to `terraform`,
+  `tofu`, or `opentofu` (optionally with a version suffix such as
+  `terraform1.9`) on `PATH`, so a cloned repository can no longer choose which
+  binary Toffee runs, or name an interpreter such as `sh` that would run a
+  repository file named after the Terraform command. Other names and explicit
+  paths must come from `~/.toffee/config.json` or `TOFFEE_TERRAFORM_PATH`.
 - `info envs` renders environment and file names as plain text with control
   characters replaced, so file names cannot inject terminal markup.
 
 ### Fixed
 
+- `env copy` and `env create` no longer wrap long file paths when output is not
+  a terminal.
 - `apply -destroy` no longer receives `-auto-approve` from the `auto_approve`
   setting.
 - The `auto_approve` setting inserts `-auto-approve` before a positional
@@ -92,8 +106,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Closed stdin at a confirmation prompt aborts cleanly instead of raising an
   error.
 - `toffee diff` compares heredoc values instead of reading their bodies as
-  settings, ignores `/* */` comments, and reports unterminated blocks and
-  unreadable files as errors instead of silently merging or crashing.
+  settings, ignores `/* */` comments, and reports unterminated blocks,
+  assignments without a value (such as `x =`), and unreadable files as errors
+  instead of silently merging, comparing an empty value, or crashing.
 - Parallel commands no longer hang on invisible prompts.
 - Parallel output is written as raw bytes with stdout and stderr kept
   separate, so JSON output is not corrupted by line wrapping, emoji
@@ -110,7 +125,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   blocks, supports `.tf.json` files and unquoted backend labels, and honors
   `-chdir`.
 - Toffee no longer crashes when `HOME` is read-only; `~/.toffee/` is created
-  only when saving global configuration.
+  only when saving global configuration or recording a saved plan.
 - `config set` reports save failures with a non-zero exit code, refuses to
   overwrite a configuration file it could not parse, and no longer crashes on
   values containing Rich markup.

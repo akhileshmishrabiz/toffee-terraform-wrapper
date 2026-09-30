@@ -115,3 +115,25 @@ def test_backend_summary_never_prints_pg_connection_string(tmp_path):
 
     assert "hunter2" not in summary
     assert summary == "pg (schema terraform_remote_state)"
+
+
+def test_unparsable_root_module_is_described_as_unknown(tmp_path):
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "s3" {\n')
+    backend_file = tmp_path / "prod.tfbackend"
+    backend_file.write_text('bucket = "state"\n')
+
+    assert (
+        describe_backend(str(tmp_path), str(backend_file))
+        == "unknown (could not parse configuration)"
+    )
+
+
+def test_unparsable_backend_file_is_described_as_unknown(tmp_path):
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "s3" {}\n}\n')
+    backend_file = tmp_path / "prod.tfbackend"
+    backend_file.write_text('bucket = "state\n')
+
+    assert (
+        describe_backend(str(tmp_path), str(backend_file))
+        == "unknown (could not parse prod.tfbackend)"
+    )

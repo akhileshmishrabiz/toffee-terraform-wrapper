@@ -16,8 +16,9 @@ from ..core.backend import (
     BackendError,
     Identity,
     describe_identity,
-    find_backend,
+    find_backend_or_unknown,
     read_settings,
+    same_state,
     selected_workspace,
     state_identity,
 )
@@ -29,6 +30,7 @@ from ..core.terraform import (
     TerraformRunner,
     bool_flag,
     display_command,
+    uses_state,
     working_directory,
 )
 from ..core.text import printable
@@ -190,7 +192,11 @@ class BaseCommand:
                 return 1
 
         global_args = list(global_args or [])
-        if not self.check_state_isolation(env_names, working_directory(global_args)):
+        if not self.check_state_isolation(
+            env_names,
+            working_directory(global_args),
+            uses_state(command_name, extra_args, global_args),
+        ):
             return 1
         if not self.prepare_execution(
             env_names, command_name, extra_args, global_args
@@ -264,7 +270,9 @@ class BaseCommand:
         """Allow subclasses to confirm execution after all targets are validated."""
         return True
 
-    def check_state_isolation(self, env_names: List[str], root_dir: str) -> bool:
+    def check_state_isolation(
+        self, env_names: List[str], root_dir: str, compare_state: bool = True
+    ) -> bool:
         """Refuse to run when a target shares files or state with another env."""
         all_names = self.env_manager.get_environment_names()
         owners = {}
@@ -289,6 +297,8 @@ class BaseCommand:
                         )
                         return False
 
+        if not compare_state:
+            return True
         comparable = [
             name
             for name in all_names
@@ -296,33 +306,57 @@ class BaseCommand:
         ]
         if len(comparable) < 2:
             return True
-        try:
-            backend = find_backend(root_dir)
-            identities = {
-                name: self.state_identity(
-                    backend,
-                    name,
-                    read_settings(self.env_manager.get_environment(name).backend_file),
-                    root_dir,
-                )
-                for name in comparable
-            }
-        except BackendError as e:
-            error_console.print(
-                f"Error: Cannot verify that environments use separate state: {e}",
-                markup=False,
-                highlight=False,
-            )
-            return False
+
+        settings = {}
+        for name in comparable:
+            backend_file = self.env_manager.get_environment(name).backend_file
+            try:
+                settings[name] = read_settings(backend_file)
+            except BackendError as e:
+                if name in env_names:
+                    error_console.print(
+                        "Error: Cannot verify that environments use separate "
+                        f"state: {e}",
+                        markup=False,
+                        highlight=False,
+                    )
+                    return False
+                self.warn_unreadable_peer(backend_file, e)
+        backend = self.load_backend(root_dir)
+        identities = {
+            name: self.state_identity(backend, name, values, root_dir)
+            for name, values in settings.items()
+        }
 
         for target in env_names:
-            for other in comparable:
-                if other != target and identities[other] == identities[target]:
+            for other, identity in identities.items():
+                if other != target and same_state(identity, identities[target]):
                     self.print_shared_state(
                         target, other, identities[target], backend, root_dir
                     )
                     return False
         return True
+
+    def load_backend(self, root_dir: str) -> Optional[Backend]:
+        """Find the root module's backend, degrading to UNKNOWN_BACKEND."""
+        backend, problem = find_backend_or_unknown(root_dir)
+        if problem:
+            error_console.print(
+                f"Warning: Cannot parse the root module ({problem}). Comparing "
+                "environments by all of their non-credential backend settings "
+                "instead.",
+                markup=False,
+                highlight=False,
+            )
+        return backend
+
+    def warn_unreadable_peer(self, backend_file: str, error: Exception) -> None:
+        error_console.print(
+            f"Warning: Ignoring {self.display_path(backend_file)} when checking "
+            f"for shared state because it cannot be parsed: {error}",
+            markup=False,
+            highlight=False,
+        )
 
     def state_identity(
         self,

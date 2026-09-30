@@ -4,6 +4,7 @@ Configuration management for the Toffee CLI tool
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -18,6 +19,10 @@ DEFAULT_CONFIG = {
 
 PROJECT_CONFIG_NAME = ".toffee.json"
 TERRAFORM_PATH_VARIABLE = "TOFFEE_TERRAFORM_PATH"
+PROJECT_TERRAFORM_NAMES = ("terraform", "tofu", "opentofu")
+_PROJECT_TERRAFORM_NAME = re.compile(
+    "(?:" + "|".join(PROJECT_TERRAFORM_NAMES) + r")(?:-?[0-9]+(?:\.[0-9]+)*)?"
+)
 
 
 class ConfigError(ValueError):
@@ -41,20 +46,21 @@ def validate_value(key: str, value: Any) -> Optional[str]:
     return None
 
 
-def is_bare_executable_name(value: str) -> bool:
-    return (
-        value not in (".", "..")
-        and os.sep not in value
-        and not (os.altsep and os.altsep in value)
-        and not os.path.splitdrive(value)[0]
-    )
+def is_project_terraform_name(value: str) -> bool:
+    """Return whether a project may choose this Terraform executable.
+
+    Any other name could be an interpreter such as ``sh`` that runs a file
+    from the repository in place of Terraform.
+    """
+    return _PROJECT_TERRAFORM_NAME.fullmatch(value) is not None
 
 
 def untrusted_terraform_path_error(value: str) -> str:
     return (
-        f"{PROJECT_CONFIG_NAME} sets terraform_path to a path ({value!r}). A "
-        "project can only name an executable on PATH, such as terraform or "
-        "tofu. Set an explicit path in ~/.toffee/config.json or the "
+        f"{PROJECT_CONFIG_NAME} sets terraform_path to {value!r}. A project can "
+        f"only choose {', '.join(PROJECT_TERRAFORM_NAMES)}, optionally with a "
+        "version suffix such as terraform1.9, looked up on PATH. Set any other "
+        "executable or path in ~/.toffee/config.json or the "
         f"{TERRAFORM_PATH_VARIABLE} environment variable."
     )
 
@@ -139,7 +145,7 @@ class Config:
 
         project_config = read_config_file(os.path.join(project_dir, PROJECT_CONFIG_NAME))
         terraform_path = project_config.get("terraform_path")
-        if terraform_path is not None and not is_bare_executable_name(terraform_path):
+        if terraform_path is not None and not is_project_terraform_name(terraform_path):
             raise ConfigError(untrusted_terraform_path_error(terraform_path))
 
         merged = {**self.config, **project_config}

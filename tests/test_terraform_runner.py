@@ -3,7 +3,7 @@
 import pytest
 
 from toffee.core.environment import Environment
-from toffee.core.terraform import TerraformRunner, display_command
+from toffee.core.terraform import TerraformRunner, display_command, uses_state
 
 VARS = "-var-file=vars/dev.tfvars"
 BACKEND = "-backend-config=vars/dev.tfbackend"
@@ -198,3 +198,53 @@ def test_display_command_redacts_values():
 
 def test_display_command_replaces_control_characters():
     assert "\x1b" not in display_command(["terraform", "plan", "-target=\x1b[2J"])
+
+
+@pytest.mark.parametrize(
+    "command, args, global_args",
+    [
+        ("fmt", ["-recursive"], []),
+        ("validate", [], []),
+        ("version", ["-json"], []),
+        ("-version", [], []),
+        ("get", [], []),
+        ("modules", [], []),
+        ("metadata", ["functions", "-json"], []),
+        ("providers", ["lock", "-platform=linux_amd64"], []),
+        ("providers", ["mirror", "dir"], []),
+        ("login", [], []),
+        ("logout", ["example.com"], []),
+        ("plan", ["-help"], []),
+        ("apply", ["-auto-approve", "-h"], []),
+        ("state", ["rm", "a", "--help"], []),
+        ("plan", [], ["-help"]),
+        ("-help", [], []),
+    ],
+)
+def test_commands_that_never_touch_state(command, args, global_args):
+    assert not uses_state(command, args, global_args)
+
+
+@pytest.mark.parametrize(
+    "command, args",
+    [
+        ("init", []),
+        ("plan", []),
+        ("apply", []),
+        ("console", []),
+        ("graph", []),
+        ("output", []),
+        ("show", []),
+        ("query", []),
+        ("providers", []),
+        ("providers", ["schema", "-json"]),
+        ("providers", ["-help=false"]),
+        ("state", ["list"]),
+        ("workspace", ["show"]),
+        ("some-future-command", []),
+        ("apply", ["--", "-help"]),
+        ("plan", ["-var", "help=-h-"]),
+    ],
+)
+def test_state_commands_and_unknown_commands_use_state(command, args):
+    assert uses_state(command, args)

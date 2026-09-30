@@ -1,11 +1,16 @@
 """Tests for backend detection and state identity."""
 
+import sys
+
 import pytest
 
 from toffee.core.backend import (
+    UNKNOWN_BACKEND,
     BackendError,
     describe_identity,
     find_backend,
+    find_backend_or_unknown,
+    same_state,
     settings_from_text,
     state_identity,
 )
@@ -157,3 +162,56 @@ def test_unreadable_configuration_raises(tmp_path):
 
     with pytest.raises(BackendError):
         find_backend(str(tmp_path))
+
+
+def test_unparsable_root_falls_back_to_unknown_backend(tmp_path):
+    (tmp_path / "main.tf").write_text('terraform {\n  backend "s3" {\n')
+
+    backend, problem = find_backend_or_unknown(str(tmp_path))
+
+    assert backend is UNKNOWN_BACKEND
+    assert "main.tf" in problem
+
+
+def test_unknown_backend_compares_every_non_credential_setting(tmp_path):
+    def identity(text, workspace="default"):
+        return state_identity(
+            UNKNOWN_BACKEND, settings_from_text(text), str(tmp_path), workspace
+        )
+
+    first = identity('bucket = "b"\nkey = "k"\ntoken = "one"')
+
+    assert same_state(first, identity('bucket = "b"\nkey = "k"\ntoken = "two"'))
+    assert same_state(first, identity('bucket = "b"\nkey = "k"', "blue"))
+    assert not same_state(first, identity('bucket = "b"\nkey = "j"'))
+    assert not same_state(first, identity('bucket = "b"\nkey = "k"\nregion = "r"'))
+    assert "one" not in describe_identity(first)
+
+
+def test_local_paths_keep_their_case_for_display(tmp_path):
+    _write_backend(tmp_path, "backend local {}")
+
+    identity = _identity(tmp_path, 'path = "State/Dev.tfstate"')
+
+    assert "State/Dev.tfstate" in describe_identity(identity)
+
+
+@pytest.mark.skipif(
+    sys.platform not in ("darwin", "win32"), reason="case-insensitive default"
+)
+def test_local_paths_compare_case_insensitively(tmp_path):
+    _write_backend(tmp_path, "backend local {}")
+
+    assert same_state(
+        _identity(tmp_path, 'path = "State/Dev.tfstate"'),
+        _identity(tmp_path, 'path = "state/dev.tfstate"'),
+    )
+
+
+def test_non_local_paths_compare_case_sensitively(tmp_path):
+    _write_backend(tmp_path, 'backend "consul" {}')
+
+    assert not same_state(
+        _identity(tmp_path, 'path = "State/Dev"'),
+        _identity(tmp_path, 'path = "state/dev"'),
+    )

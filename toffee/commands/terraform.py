@@ -1,7 +1,7 @@
 """Generic Terraform command handling."""
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import click
 from rich.console import Console
@@ -132,15 +132,17 @@ class TerraformCommands(BaseCommand):
         if command_name == "apply":
             saved_plan = saved_plan_path(extra_args, working_dir)
             if saved_plan:
-                verified = self._verify_saved_plan(saved_plan, env_names[0])
-                if verified is None:
+                verified, problem = self._verify_saved_plan(saved_plan, env_names[0])
+                if not verified and problem is None:
                     return False
-                if not verified and self._project_has_protected_environment():
+                if problem and self._project_has_protected_environment():
                     notes.append(
-                        f"Toffee cannot verify which environment the saved plan "
-                        f"{self.display_path(saved_plan)} was created for. A saved "
-                        "plan changes the state it was planned against, which may "
-                        "belong to a protected environment."
+                        "The origin of saved plan "
+                        f"{printable(self.display_path(saved_plan))} cannot be "
+                        f"verified: {printable(problem)}. Toffee cannot tell which "
+                        "environment it was created for. A saved plan changes the "
+                        "state it was planned against, which may belong to a "
+                        "protected environment."
                     )
 
         if notes or any(self.is_protected(name) for name in env_names):
@@ -197,13 +199,19 @@ class TerraformCommands(BaseCommand):
         extra_args.insert(0, "-auto-approve")
         return True
 
-    def _verify_saved_plan(self, plan_path: str, env_name: str) -> Optional[bool]:
-        """Return True if verified, False if unrecorded, None if refused."""
+    def _verify_saved_plan(
+        self, plan_path: str, env_name: str
+    ) -> Tuple[bool, Optional[str]]:
+        """Return (True, None) if verified, (False, reason) if the origin is
+        unknown, or (False, None) after printing why the plan is refused."""
         name = printable(self.display_path(plan_path))
         try:
             record = plans.read_record(plan_path)
             if record is None:
-                return False
+                return False, "it has no Toffee record"
+            problem = plans.signature_problem(record)
+            if problem:
+                return False, problem
             digest = plans.file_digest(plan_path)
         except (OSError, plans.PlanRecordError) as e:
             error_console.print(
@@ -211,7 +219,7 @@ class TerraformCommands(BaseCommand):
                 markup=False,
                 highlight=False,
             )
-            return None
+            return False, None
 
         if record.environment != env_name:
             error_console.print(
@@ -221,7 +229,7 @@ class TerraformCommands(BaseCommand):
                 markup=False,
                 highlight=False,
             )
-            return None
+            return False, None
         if digest != record.sha256:
             error_console.print(
                 f"Error: Saved plan {name} changed after Toffee recorded it for "
@@ -229,18 +237,19 @@ class TerraformCommands(BaseCommand):
                 markup=False,
                 highlight=False,
             )
-            return None
-        return True
+            return False, None
+        return True, None
 
     def _record_plan(self, plan_path: str, env_name: str) -> None:
         if not plans.is_plan_file(plan_path):
             return
         try:
             plans.write_record(plan_path, env_name)
-        except OSError as e:
+        except (OSError, plans.SigningKeyError) as e:
             error_console.print(
                 f"Warning: Could not record the plan's environment ({e}). "
-                "Applying it will require confirmation.",
+                "Applying it will require confirmation if the project has a "
+                "protected environment.",
                 markup=False,
                 highlight=False,
             )

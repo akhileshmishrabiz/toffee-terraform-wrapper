@@ -123,3 +123,12 @@ def test_composite_values_with_sensitive_nested_keys_are_secret():
 def test_url_credentials_are_secret():
     assert contains_secret('"postgres://admin:hunter2@db:5432/app"')
     assert not contains_secret('"https://example.com/path"')
+
+
+@pytest.mark.parametrize("text", ["x = \n", "x =", "x = # comment\n", "x = /* c */\n"])
+def test_missing_value_is_an_error(tmp_path, text):
+    config = tmp_path / "dev.tfvars"
+    config.write_text('a = "b"\n' + text)
+
+    with pytest.raises(HCLError, match="missing value for 'x' on line 2"):
+        read_assignments(str(config))
