@@ -44,7 +44,11 @@ class InfoCommands(BaseCommand):
             if result.returncode == 0:
                 output = result.stdout.decode("utf-8", errors="replace")
                 terraform_version = next(
-                    (printable(line.strip()) for line in output.splitlines() if line.strip()),
+                    (
+                        printable(line.strip())
+                        for line in output.splitlines()
+                        if line.strip()
+                    ),
                     "Unknown",
                 )
         except OSError:

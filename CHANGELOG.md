@@ -160,7 +160,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Environment names with a trailing newline are rejected, and names that
   commands reject (such as `config`, `dev.eu`, or `my env`) are no longer
   listed.
-- Builds require setuptools 61 or newer, which prevents an empty
+- Builds require setuptools 77 or newer, which prevents an empty
   `UNKNOWN-0.0.0` wheel, and the version is defined once in
   `toffee/__init__.py`.
 - Tests no longer read or write the real `~/.toffee`, and the integration test
