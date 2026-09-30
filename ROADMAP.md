@@ -21,6 +21,27 @@
   committing to one policy engine.
 - **Optional cost estimates:** Integrate an external service such as Infracost
   for opt-in infrastructure cost estimation.
+- **Project scaffolding:** Add `toffee new` with one minimal built-in template:
+  `versions.tf`, `main.tf`, `variables.tf`, `outputs.tf`,
+  `vars/<env>.tfvars` and `vars/<env>.tfbackend` with a unique state key per
+  environment, `.toffee.json`, and `.gitignore`. Support `--envs`,
+  `--backend`, `--provider`, `--region`, `--template <local dir>`, and
+  `--dry-run`, substitute values with `string.Template`, never overwrite
+  existing files, and optionally write an `AGENTS.md` for AI tools.
+- **AI-agent interface:** Provide stable `--json` output and documented exit
+  codes for plan, check, diff, and cost, plus an MCP server (`toffee mcp`)
+  exposing read, plan, and check tools. It will never apply to protected
+  environments.
+- **Plan risk summary:** Show a deterministic summary of a plan in the
+  protected-environment prompt: change counts, deletions and replacements, and
+  IAM or network exposure changes.
+- **Optional Jev assessment:** Add an opt-in assessment, for example
+  `check --plan --assess`, that sends a redacted plan summary to the Jev
+  (TypeSafe AI) typed decision model through a configurable endpoint such as
+  OpenRouter or Vercel AI Gateway, and reports whether the plan matches the
+  stated intent along with a risk rating. It will be strictly advisory: it
+  may add warnings or confirmations but never skip protections. It will be
+  off by default and require no SDK.
 
 External tools will remain optional. Toffee will orchestrate established tools
 rather than reimplement their analysis engines.
