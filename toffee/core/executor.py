@@ -61,18 +61,24 @@ def _exit_status(returncode: int) -> int:
     return 128 - returncode if returncode < 0 else returncode
 
 
-def run_streamed(cmd: List[str], process_env: Optional[Dict[str, str]] = None) -> int:
+def run_streamed(
+    cmd: List[str],
+    process_env: Optional[Dict[str, str]] = None,
+    cwd: Optional[str] = None,
+) -> int:
     """
-    Run a Terraform command with inherited stdio so interactive prompts work.
+    Run a command with inherited stdio so interactive prompts work.
 
     Args:
         cmd: Full command as a list of strings
+        cwd: Working directory for scanners. Terraform keeps the caller's
+            directory and receives -chdir itself.
 
     Returns:
         Process exit code
     """
     with _SignalForwarding() as forwarding:
-        process = subprocess.Popen(cmd, env=process_env)
+        process = subprocess.Popen(cmd, env=process_env, cwd=cwd)
         forwarding.track(process)
         return _exit_status(process.wait())
 

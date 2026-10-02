@@ -8,13 +8,16 @@ import click
 from rich.console import Console
 
 from . import __version__
+from .commands.check import CheckCommands, check_help
 from .commands.config import ConfigCommands
 from .commands.diff import DiffCommands
 from .commands.env import EnvCommands
 from .commands.info import InfoCommands
 from .commands.new import NewCommand
 from .commands.terraform import TerraformCommands
+from .core.checks import requests_check_help
 from .core.config import ConfigError
+from .core.terraform import help_requested
 
 PASSTHROUGH_CONTEXT = {"allow_extra_args": True, "ignore_unknown_options": True}
 
@@ -61,6 +64,10 @@ def get_diff_commands() -> DiffCommands:
 
 def get_new_command() -> NewCommand:
     return NewCommand()
+
+
+def get_check_commands() -> CheckCommands:
+    return CheckCommands()
 
 
 def _environment_target_command(target_spec: str) -> click.Command:
@@ -116,6 +123,20 @@ def _environment_target_command(target_spec: str) -> click.Command:
         global_args = raw_argv[:command_index]
         command = raw_argv[command_index]
         command_args = raw_argv[command_index + 1 :]
+
+        if command == "check":
+            if help_requested([*global_args, *command_args]) or requests_check_help(
+                command_args
+            ):
+                click.echo(check_help())
+                raise click.exceptions.Exit(0)
+            code = get_check_commands().run(
+                env_names,
+                command_args,
+                parallel=parallel,
+                global_args=global_args,
+            )
+            raise click.exceptions.Exit(code)
 
         code = get_terraform_commands().run_command(
             env_names,

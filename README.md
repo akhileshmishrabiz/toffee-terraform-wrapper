@@ -211,7 +211,8 @@ Toffee automatically adds:
 - `TF_DATA_DIR=.toffee/terraform-data/<env>` to every subprocess
 
 Unknown Terraform commands are also passed through, so newer Terraform
-versions do not need a matching Toffee release.
+versions do not need a matching Toffee release. `check` is a Toffee command,
+not a Terraform command.
 
 ### Multiple environments
 
@@ -227,6 +228,43 @@ Sequential execution stops at the first failure. `--parallel` runs eligible
 commands concurrently, but `init` remains serialized because environments
 share `.terraform.lock.hcl`. Interactive parallel commands are rejected.
 Parallel apply or destroy requires Terraform's non-interactive approval flag.
+
+### Check an environment
+
+`toffee <env> check` runs Terraform `fmt` and `validate` for that environment.
+See the options with either of these:
+
+```bash
+toffee dev check
+toffee dev check help
+toffee dev check --help
+```
+
+`--checks` adds scanners. The names are `tflint` and `checkov`, separated by
+commas. `fmt` and `validate` always run, so they are not accepted there.
+
+```bash
+toffee dev check --checks tflint
+toffee dev check --checks tflint,checkov
+toffee dev,prod check --checks checkov
+```
+
+`fmt` runs once. `validate` and each selected scanner run once per environment.
+Checkov prints failed checks only, without passing checks or source blocks.
+The label for each check, and the summary, are on stderr. A failure does not
+skip the checks after it.
+
+If a selected scanner is not on `PATH`, check stops before running anything
+and prints how to install it:
+
+- Checkov: `uv tool install checkov` or `pipx install checkov`
+- TFLint is not a Python package. The message prints the install commands
+  for this operating system: Homebrew on macOS, WinGet on Windows, and the
+  release archive on Linux, plus `go install github.com/terraform-linters/tflint@latest`.
+
+Exit 0 when every check passes. Exit 1 when a check fails or a selected tool
+is missing. Exit 2 when the arguments are wrong; that message lists the
+options. `--check` is not an option; the flag is `--checks`.
 
 ### Compare environments
 
