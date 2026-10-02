@@ -12,6 +12,8 @@ from toffee.core.checks import (
     parse_checks,
     plan_steps,
     rerun_command,
+    status_style,
+    tflint_install_lines,
 )
 
 CHECKOV_FAILURE = "Check: CKV_AWS_20: Some bucket is public"
@@ -143,18 +145,81 @@ class TestCheckPlan:
             "  toffee dev check"
         )
 
-    def test_missing_tflint_points_at_its_install_page(self):
+    def test_missing_tflint_uses_the_current_operating_system(self):
         message = format_missing(
             [("tflint", "tflint"), ("checkov", "checkov")],
             rerun_command(["dev", "prod"], ["-chdir=module"], []),
         )
 
-        assert "https://github.com/terraform-linters/tflint#installation" in message
+        for line in tflint_install_lines():
+            assert line in message
         assert "uv tool install tflint" not in message
         assert "pipx install tflint" not in message
         assert "uv tool install checkov" in message
         assert "pipx install checkov" in message
         assert "Or run without them:\n  toffee dev,prod -chdir=module check" in message
+
+    def test_pass_lines_are_green_and_fail_lines_are_red(self, monkeypatch):
+        import io
+
+        from rich.console import Console
+
+        from toffee.commands import check as check_module
+
+        assert status_style("fmt passed") == "green"
+        assert status_style("tflint failed with exit code 2") == "red"
+        buffer = io.StringIO()
+        monkeypatch.setattr(
+            check_module,
+            "status_console",
+            Console(
+                file=buffer,
+                force_terminal=True,
+                soft_wrap=True,
+                color_system="standard",
+                no_color=False,
+                _environ={},
+            ),
+        )
+        check_module.CheckCommands._print_status("fmt passed", indent="  ")
+        check_module.CheckCommands._print_status(
+            "tflint failed with exit code 2", indent="  "
+        )
+        output = buffer.getvalue()
+        assert "\x1b[32m" in output
+        assert "\x1b[31m" in output
+        assert "fmt passed" in output
+        assert "tflint failed with exit code 2" in output
+
+    def test_tflint_install_commands_follow_the_operating_system(self):
+        macos = tflint_install_lines("Darwin", "arm64")
+        windows = tflint_install_lines("Windows", "AMD64")
+        linux_amd64 = tflint_install_lines("Linux", "x86_64")
+        linux_arm64 = tflint_install_lines("Linux", "aarch64")
+        go_install = "go install github.com/terraform-linters/tflint@latest"
+
+        assert macos == [
+            "Install tflint with:",
+            "  brew install terraform-linters/tap/tflint",
+            "Or with Go:",
+            f"  {go_install}",
+        ]
+        assert windows == [
+            "Install tflint with:",
+            "  winget install -e --id TerraformLinters.tflint",
+            "Or with Go:",
+            f"  {go_install}",
+        ]
+        assert (
+            "  curl -sSLO https://github.com/terraform-linters/tflint/releases/latest/download/tflint_linux_amd64.zip"
+            in linux_amd64
+        )
+        assert "  unzip tflint_linux_amd64.zip" in linux_amd64
+        assert "  sudo install -c -v tflint /usr/local/bin/" in linux_amd64
+        assert "tflint_linux_arm64.zip" in "\n".join(linux_arm64)
+        assert "brew install" not in "\n".join(linux_amd64)
+        assert "winget install" not in "\n".join(macos)
+        assert go_install in "\n".join(linux_amd64)
 
     def test_missing_terraform_has_no_rerun_line(self):
         message = format_missing([("terraform", "/opt/tofu")], None)
@@ -203,17 +268,50 @@ class TestCheckCommand:
         assert "failed checks" in result.stdout
         assert _log(mock_terraform_log) == ""
 
+    def test_help_word_shows_the_same_help(self, invoke, mock_terraform_log):
+        result = invoke("dev", "check", "help")
+
+        assert result.exit_code == 0
+        assert result.stdout.startswith("Usage: toffee <env>[,<env>...] check")
+        assert "--checks" in result.stdout
+        assert "TERRAFORM_COMMAND" not in result.stdout
+        assert _log(mock_terraform_log) == ""
+
+    def test_singular_check_flag_names_the_option(self, invoke, mock_terraform_log):
+        result = invoke("dev", "check", "--check")
+
+        assert result.exit_code == 2
+        assert result.stderr.startswith("Usage: toffee <env>[,<env>...] check")
+        assert "--checks TOOLS" in result.stderr
+        assert "Unknown option '--check'. Use --checks tflint,checkov." in result.stderr
+        assert "TERRAFORM_COMMAND" not in result.stderr
+        assert _log(mock_terraform_log) == ""
+
+    def test_singular_check_flag_keeps_the_scanner_name(
+        self, invoke, mock_terraform_log
+    ):
+        result = invoke("dev", "check", "--check", "tflint")
+
+        assert result.exit_code == 2
+        assert "Use --checks tflint." in result.stderr
+        assert "--checks TOOLS" in result.stderr
+        assert _log(mock_terraform_log) == ""
+
     def test_parallel_is_rejected(self, invoke, mock_terraform_log):
         result = invoke("dev", "check", "--parallel")
 
         assert result.exit_code == 2
+        assert result.stderr.startswith("Usage: toffee <env>[,<env>...] check")
         assert "Remove --parallel" in result.stderr
+        assert "TERRAFORM_COMMAND" not in result.stderr
         assert _log(mock_terraform_log) == ""
 
     def test_unknown_check_is_a_usage_error(self, invoke, mock_terraform_log):
         result = invoke("dev", "check", "--checks", "opa")
 
         assert result.exit_code == 2
+        assert result.stderr.startswith("Usage: toffee <env>[,<env>...] check")
+        assert "--checks TOOLS" in result.stderr
         assert "tflint and checkov" in result.stderr
         assert _log(mock_terraform_log) == ""
 
@@ -248,9 +346,8 @@ class TestCheckCommand:
 
         assert result.exit_code == 1
         assert _log(mock_terraform_log) == ""
-        assert (
-            "https://github.com/terraform-linters/tflint#installation" in result.stderr
-        )
+        for line in tflint_install_lines():
+            assert line in result.stderr
         assert "uv tool install tflint" not in result.stderr
         assert "pipx install tflint" not in result.stderr
         assert "uv tool install checkov" in result.stderr

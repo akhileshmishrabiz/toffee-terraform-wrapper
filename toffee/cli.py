@@ -15,6 +15,7 @@ from .commands.env import EnvCommands
 from .commands.info import InfoCommands
 from .commands.new import NewCommand
 from .commands.terraform import TerraformCommands
+from .core.checks import requests_check_help
 from .core.config import ConfigError
 from .core.terraform import help_requested
 
@@ -124,7 +125,9 @@ def _environment_target_command(target_spec: str) -> click.Command:
         command_args = raw_argv[command_index + 1 :]
 
         if command == "check":
-            if help_requested([*global_args, *command_args]):
+            if help_requested([*global_args, *command_args]) or requests_check_help(
+                command_args
+            ):
                 click.echo(check_help())
                 raise click.exceptions.Exit(0)
             code = get_check_commands().run(

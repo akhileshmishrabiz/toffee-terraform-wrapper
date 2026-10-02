@@ -15,6 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   page for TFLint. Checkov output is limited to failed checks. The behavior
   is specified in `specs/check.md`.
 
+### Changed
+
+- `toffee <env> check help` shows the check help. A wrong check argument,
+  including `--check`, prints the check options and names `--checks`.
+- A missing TFLint prints the install commands for the current operating
+  system: Homebrew on macOS, WinGet on Windows, and the release archive on
+  Linux, plus the Go install command.
+- Check pass lines are green and fail lines are red.
+
 ## [1.0.0] - 2026-09-30
 
 ### Added

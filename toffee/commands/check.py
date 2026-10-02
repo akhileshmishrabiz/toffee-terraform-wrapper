@@ -14,6 +14,7 @@ from ..core.checks import (
     plan_steps,
     rerun_command,
     status_phrase,
+    status_style,
 )
 from ..core.executor import run_streamed
 from ..core.terraform import _relative_path, display_command, working_directory
@@ -35,9 +36,28 @@ def check_help_command() -> None:
     \b
     Examples:
       toffee dev check
+      toffee dev check help
       toffee dev check --checks tflint,checkov
       toffee dev,prod check --checks checkov
     """
+
+
+def check_usage() -> str:
+    """Return the check usage and options, without the longer description."""
+    return (
+        "Usage: toffee <env>[,<env>...] check [OPTIONS]\n"
+        "\n"
+        "Options:\n"
+        "  --checks TOOLS  Comma-separated scanners to add: tflint, checkov.\n"
+        "  -h, --help      Show this message and exit.\n"
+        "  help            Show this message and exit."
+    )
+
+
+def reject_check_usage(message: str) -> None:
+    """Print check options, then exit 2. Does not return."""
+    click.echo(f"{check_usage()}\n\nError: {message}", err=True)
+    raise click.exceptions.Exit(2)
 
 
 def check_help() -> str:
@@ -62,9 +82,9 @@ class CheckCommands(BaseCommand):
         try:
             selected = parse_checks(list(extra_args or []))
         except CheckUsage as error:
-            raise click.UsageError(str(error)) from error
+            reject_check_usage(str(error))
         if parallel:
-            raise click.UsageError(
+            reject_check_usage(
                 "check runs one step at a time so the report stays in order. "
                 "Remove --parallel."
             )
@@ -136,10 +156,19 @@ class CheckCommands(BaseCommand):
             )
             code = 1
         phrase = status_phrase(step.label, code)
-        status_console.print(phrase, markup=False, highlight=False)
+        self._print_status(phrase)
         return phrase
 
     def _summarize(self, phrases: Sequence[str]) -> None:
         status_console.print("\nSummary", markup=False, highlight=False)
         for phrase in phrases:
-            status_console.print(f"  {phrase}", markup=False, highlight=False)
+            self._print_status(phrase, indent="  ")
+
+    @staticmethod
+    def _print_status(phrase: str, indent: str = "") -> None:
+        status_console.print(
+            f"{indent}{phrase}",
+            style=status_style(phrase),
+            markup=False,
+            highlight=False,
+        )

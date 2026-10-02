@@ -11,8 +11,8 @@ toffee <env>[,<env>...] [terraform-global-args] check [--checks TOOLS]
 
 `check` is a Toffee command. It is not passed through to Terraform.
 
-`toffee <env> check --help` and `-h` print Toffee's help and exit 0. They do
-not run Terraform and do not require the scanners to be installed.
+`toffee <env> check --help`, `-h`, and `help` print Toffee's help and exit 0.
+They do not run Terraform and do not require the scanners to be installed.
 
 `--parallel` is rejected. Checks run one at a time so the report stays in
 order. This is a usage error (exit 2).
@@ -21,6 +21,10 @@ The only check option is `--checks` (or `--checks=TOOLS`). Any other argument
 is a usage error. `--checks` may be passed once. `TOOLS` is a comma-separated
 list. Surrounding whitespace is ignored. Empty names, repeated names, and
 unknown names are usage errors.
+
+A usage error prints the check command usage and its options, then the error.
+It does not print the environment passthrough usage. `--check` names the
+option to use instead, `--checks`.
 
 ## What runs
 
@@ -86,11 +90,20 @@ uv tool install checkov
 pipx install checkov
 ```
 
-TFLint is a Go binary and has no Python package. When it is missing, print its
-installation page and do not print a `uv` or `pipx` command:
+TFLint is a Go binary and has no Python package. When it is missing, print the
+install commands for the current operating system, and do not print a `uv` or
+`pipx` command.
+
+- macOS: `brew install terraform-linters/tap/tflint`
+- Windows: `winget install -e --id TerraformLinters.tflint`
+- Linux: download `tflint_linux_amd64.zip` or `tflint_linux_arm64.zip` from the
+  latest release, matching the machine, then verify the checksum and install
+  the binary. The commands are the ones published by TFLint.
+
+On each of those systems, also print:
 
 ```text
-https://github.com/terraform-linters/tflint#installation
+go install github.com/terraform-linters/tflint@latest
 ```
 
 When only scanners are missing, also print the Toffee command that repeats the
@@ -132,7 +145,9 @@ line lists environments in the order given and the check names `fmt`,
 `validate`, then the selected scanners.
 
 A step exits 0 with `<label> passed`. Any other status is
-`<label> failed with exit code N`, using the tool's status.
+`<label> failed with exit code N`, using the tool's status. In a terminal,
+passed lines are green and failed lines are red, both after the step and in
+the summary.
 
 - Exit 0 when every step exits 0.
 - Exit 1 when a selected tool is missing or any step fails. The command's exit

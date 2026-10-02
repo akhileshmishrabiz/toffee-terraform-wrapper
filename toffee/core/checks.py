@@ -4,6 +4,7 @@ The behavior is specified in specs/check.md.
 """
 
 import os
+import platform
 import shlex
 import shutil
 from dataclasses import dataclass
@@ -14,7 +15,8 @@ CHECKOV_INSTALL_COMMANDS = (
     "uv tool install checkov",
     "pipx install checkov",
 )
-TFLINT_INSTALL_URL = "https://github.com/terraform-linters/tflint#installation"
+TFLINT_GO_INSTALL = "go install github.com/terraform-linters/tflint@latest"
+_TFLINT_RELEASE = "https://github.com/terraform-linters/tflint/releases/latest/download"
 
 # kind is "terraform", "tflint", or "checkov". name is the executable text.
 MissingTool = Tuple[str, str]
@@ -52,11 +54,31 @@ def parse_checks(args: Sequence[str]) -> List[str]:
             value = arg[len("--checks=") :]
             index += 1
         else:
-            raise CheckUsage(f"Unknown argument {arg!r}. The only option is --checks.")
+            following = args[index + 1] if index + 1 < len(args) else None
+            raise _unknown_argument(arg, following)
         if selected is not None:
             raise CheckUsage("Pass --checks once.")
         selected = _parse_names(value)
     return selected or []
+
+
+def requests_check_help(args: Sequence[str]) -> bool:
+    """Return whether these arguments ask for check help."""
+    return "help" in args
+
+
+def _unknown_argument(arg: str, following: Optional[str]) -> CheckUsage:
+    if arg == "--check" or arg.startswith("--check="):
+        if arg.startswith("--check="):
+            value = arg[len("--check=") :]
+        elif following and not following.startswith("-"):
+            value = following
+        else:
+            value = "tflint,checkov"
+        return CheckUsage(f"Unknown option {arg!r}. Use --checks {value}.")
+    if arg.startswith("-"):
+        return CheckUsage(f"Unknown option {arg!r}. Options are --checks and --help.")
+    return CheckUsage(f"Unknown argument {arg!r}. Options are --checks and --help.")
 
 
 def _parse_names(value: str) -> List[str]:
@@ -160,6 +182,11 @@ def status_phrase(label: str, code: int) -> str:
     return f"{label} failed with exit code {code}"
 
 
+def status_style(phrase: str) -> str:
+    """Return the color for a pass or fail line."""
+    return "green" if phrase.endswith(" passed") else "red"
+
+
 def rerun_command(
     env_names: Sequence[str],
     global_args: Sequence[str],
@@ -196,8 +223,7 @@ def format_missing(
             lines.append(name)
             lines.append("  toffee check runs terraform fmt and terraform validate.")
         elif kind == "tflint":
-            lines.append("Install tflint from:")
-            lines.append(f"  {TFLINT_INSTALL_URL}")
+            lines.extend(tflint_install_lines())
         else:
             lines.append("Install checkov with either command:")
             for command in CHECKOV_INSTALL_COMMANDS:
@@ -211,6 +237,50 @@ def format_missing(
     else:
         lines.pop()
     return "\n".join(lines)
+
+
+def tflint_install_lines(
+    system: Optional[str] = None, machine: Optional[str] = None
+) -> List[str]:
+    """Return the TFLint install hint for this operating system."""
+    system_name = (system if system is not None else platform.system()).casefold()
+    machine_name = machine if machine is not None else platform.machine()
+    if system_name == "darwin":
+        commands = ["brew install terraform-linters/tap/tflint"]
+    elif system_name == "windows":
+        commands = ["winget install -e --id TerraformLinters.tflint"]
+    elif system_name == "linux":
+        commands = _linux_tflint_commands(machine_name)
+    else:
+        commands = []
+    if not commands:
+        return ["Install tflint with:", f"  {TFLINT_GO_INSTALL}"]
+    return [
+        "Install tflint with:",
+        *[f"  {command}" for command in commands],
+        "Or with Go:",
+        f"  {TFLINT_GO_INSTALL}",
+    ]
+
+
+def _linux_tflint_commands(machine: str) -> List[str]:
+    arch = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }.get(machine.casefold())
+    if arch is None:
+        return []
+    archive = f"tflint_linux_{arch}.zip"
+    return [
+        f"curl -sSLO {_TFLINT_RELEASE}/{archive}",
+        f"curl -sSLO {_TFLINT_RELEASE}/checksums.txt",
+        "gh attestation verify checksums.txt -R terraform-linters/tflint",
+        "sha256sum --ignore-missing -c checksums.txt",
+        f"unzip {archive}",
+        "sudo install -c -v tflint /usr/local/bin/",
+    ]
 
 
 def _join(names: Sequence[str]) -> str:
