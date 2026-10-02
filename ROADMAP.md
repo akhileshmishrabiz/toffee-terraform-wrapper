@@ -19,11 +19,12 @@
   state key, `.toffee.json`, and `.gitignore`). The scaffold intentionally has
   fixed AWS, S3, `us-east-1`, and `dev` defaults and no configuration options.
   It never overwrites existing files.
+- **Unified checks:** `toffee <env> check` runs Terraform `fmt` and `validate`,
+  and runs TFLint and Checkov source scans when they are named with
+  `--checks`. Checkov reports failed checks only. Plan scans remain separate.
 
 ## Planned
 
-- **Unified checks:** Provide one intuitive workflow that orchestrates
-  Terraform `fmt` and `validate`, TFLint, and Checkov source scans.
 - **Automation-friendly CLI:** Add stable Toffee-owned machine-readable output
   and richer structured help. Click shell completion for current Toffee
   commands is documented; dynamic environment and Terraform completion remains

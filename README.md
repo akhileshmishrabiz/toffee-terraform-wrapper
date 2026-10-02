@@ -211,7 +211,8 @@ Toffee automatically adds:
 - `TF_DATA_DIR=.toffee/terraform-data/<env>` to every subprocess
 
 Unknown Terraform commands are also passed through, so newer Terraform
-versions do not need a matching Toffee release.
+versions do not need a matching Toffee release. `check` is a Toffee command,
+not a Terraform command.
 
 ### Multiple environments
 
@@ -227,6 +228,25 @@ Sequential execution stops at the first failure. `--parallel` runs eligible
 commands concurrently, but `init` remains serialized because environments
 share `.terraform.lock.hcl`. Interactive parallel commands are rejected.
 Parallel apply or destroy requires Terraform's non-interactive approval flag.
+
+### Check an environment
+
+`fmt` and `validate` always run. `--checks` adds `tflint`, `checkov`, or both.
+A named scanner must be on `PATH`. If one is missing, Toffee runs nothing and
+prints how to install it: `uv tool install checkov` and `pipx install checkov`
+for Checkov. TFLint is not a Python package, so Toffee prints its installation
+page instead of a `uv` or `pipx` command.
+
+```bash
+toffee dev check
+toffee dev check --checks tflint,checkov
+toffee dev,prod check --checks checkov
+```
+
+`fmt` runs once. `validate`, TFLint, and Checkov run once per environment.
+Checkov prints failed checks only, without passing checks or source blocks.
+Toffee's labels and summary go to stderr. Later checks still run after a
+failure. The command exits 0 when every check passes and 1 otherwise.
 
 ### Compare environments
 

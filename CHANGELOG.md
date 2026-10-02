@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Add `toffee <env>[,<env>...] check` to run Terraform `fmt` and `validate`,
+  plus TFLint and Checkov when named with `--checks`. A missing selected tool
+  stops the run before any check and prints install hints: `uv tool install
+  checkov` and `pipx install checkov` for Checkov, and TFLint's installation
+  page for TFLint. Checkov output is limited to failed checks. The behavior
+  is specified in `specs/check.md`.
+
 ## [1.0.0] - 2026-09-30
 
 ### Added

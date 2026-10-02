@@ -22,6 +22,10 @@ ruff format --check .
 
 - `tests/test_cli.py` covers the environment-first CLI, passthrough arguments,
   preflight validation, `toffee diff`, and isolated `TF_DATA_DIR` values.
+- `tests/test_check.py` covers `toffee <env> check` against `specs/check.md`:
+  the default `fmt` and `validate` steps, `--checks`, missing-tool install
+  hints, Checkov's failed-check output, and continued execution after a
+  failure.
 - `tests/test_guardrails.py` covers protected-environment confirmations, saved
   plan origin records, shared-state refusal, and `env copy` safety.
 - `tests/test_execution.py` covers parallel output and stdin, exit code

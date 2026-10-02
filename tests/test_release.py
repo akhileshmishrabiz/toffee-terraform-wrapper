@@ -64,6 +64,10 @@ def test_readme_install_and_first_project_commands_match_cli():
         "service/vars/dev.tfbackend",
         "toffee dev init",
         "toffee dev validate",
+        "toffee dev check",
+        "toffee dev check --checks tflint,checkov",
+        "uv tool install checkov",
+        "pipx install checkov",
         "toffee dev plan",
         "toffee dev apply",
     ):
