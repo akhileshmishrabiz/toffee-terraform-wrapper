@@ -6,14 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-03
+
 ### Added
 
 - Add `toffee <env>[,<env>...] check` to run Terraform `fmt` and `validate`,
   plus TFLint and Checkov when named with `--checks`. A missing selected tool
   stops the run before any check and prints install hints: `uv tool install
-  checkov` and `pipx install checkov` for Checkov, and TFLint's installation
-  page for TFLint. Checkov output is limited to failed checks. The behavior
-  is specified in `specs/check.md`.
+  checkov` and `pipx install checkov` for Checkov, and the operating-system
+  install commands for TFLint. Checkov output is limited to failed checks.
+  The behavior is specified in `specs/check.md`.
 
 ### Changed
 
@@ -23,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   system: Homebrew on macOS, WinGet on Windows, and the release archive on
   Linux, plus the Go install command.
 - Check pass lines are green and fail lines are red.
+- The README is a short usage guide, with a command table at the end.
 
 ## [1.0.0] - 2026-09-30
 
@@ -184,5 +187,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   version line without crashing on non-UTF-8 output.
 - Terraform examples are normalized with `terraform fmt`.
 
-[Unreleased]: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/akhileshmishrabiz/toffee-terraform-wrapper/compare/c69b783...v1.0.0
