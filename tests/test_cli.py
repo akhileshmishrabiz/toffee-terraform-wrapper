@@ -94,6 +94,24 @@ class TestCLI:
             assert secret not in result.stdout
         assert result.stdout.count("<redacted>") == 6
 
+    def test_diff_redacts_sensitive_values_inside_wrapped_maps(
+        self, invoke, project_dir
+    ):
+        project, _, _ = project_dir
+        (project / "vars" / "dev.tfvars").write_text(
+            'config = jsonencode({ password = "dev-pw" })\n'
+        )
+        (project / "vars" / "prod.tfvars").write_text(
+            'config = jsonencode({ password = "prod-pw" })\n'
+        )
+
+        result = invoke("diff", "dev", "prod")
+
+        assert result.exit_code == 0
+        assert "dev-pw" not in result.stdout
+        assert "prod-pw" not in result.stdout
+        assert result.stdout.count("<redacted>") == 2
+
     def test_diff_filters_control_and_bidi_characters(self, invoke, project_dir):
         project, _, _ = project_dir
         (project / "vars" / "dev.tfvars").write_text(

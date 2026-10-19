@@ -123,6 +123,18 @@ def test_url_credentials_are_secret():
     assert not contains_secret('"https://example.com/path"')
 
 
+def test_sensitive_nested_keys_are_found_inside_wrapped_values():
+    assert contains_secret('jsonencode({ password = "x" })')
+    assert contains_secret('"{\\"password\\": \\"x\\"}"')
+    assert contains_secret('<<EOT\n{"password": "x"}\nEOT')
+
+
+def test_plain_strings_that_look_like_assignments_are_not_secret():
+    assert not contains_secret('"password"')
+    assert not contains_secret('"token=abc"')
+    assert not contains_secret('"see the password guide"')
+
+
 @pytest.mark.parametrize("text", ["x = \n", "x =", "x = # comment\n", "x = /* c */\n"])
 def test_missing_value_is_an_error(tmp_path, text):
     config = tmp_path / "dev.tfvars"
