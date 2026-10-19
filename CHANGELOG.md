@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `toffee diff` redacts a sensitive value that embeds a map or list anywhere in
+  the value, not only when the value starts with `{` or `[`. A nested secret in
+  a value such as `jsonencode({ password = "..." })`, a JSON payload written as
+  a string, or a heredoc holding JSON is no longer printed.
+
 ## [1.1.0] - 2026-10-03
 
 ### Added

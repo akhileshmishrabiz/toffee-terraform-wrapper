@@ -76,8 +76,19 @@ def contains_secret(value: str) -> bool:
     """Return whether a value embeds a sensitive nested key or URL credentials."""
     if _URL_CREDENTIALS.search(value):
         return True
-    if not value.lstrip().startswith(("{", "[")):
-        return False
-    return any(
-        is_sensitive_key(quoted or bare) for quoted, bare in _NESTED_KEY.findall(value)
-    )
+    if _has_sensitive_nested_key(value):
+        return True
+    # A JSON payload written as a string hides its keys behind escapes.
+    return _has_sensitive_nested_key(value.replace('\\"', '"'))
+
+
+def _has_sensitive_nested_key(text: str) -> bool:
+    """Return whether a map or list in ``text`` names a sensitive setting."""
+    for match in _NESTED_KEY.finditer(text):
+        quoted, bare = match.group(1), match.group(2)
+        if not is_sensitive_key(quoted or bare):
+            continue
+        # Only a key inside a map or list literal names a nested setting.
+        if "{" in text[: match.start()] or "[" in text[: match.start()]:
+            return True
+    return False
